@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const config = require('./config');
 const database = require('./utils/database');
+const cloudinary = require('./utils/cloudinary');
 const logger = require('./utils/logger');
 
 // Import the ping server
@@ -176,10 +177,15 @@ async function startBot() {
         logger.info('⏳ Waiting 3 seconds for command propagation...');
         await new Promise(resolve => setTimeout(resolve, 3000));
         
-        // Initialize Firebase
-        logger.info('🔥 Initializing Firebase...');
+        // Initialize Firebase (Firestore)
+        logger.info('🔥 Initializing Firebase Firestore...');
         await database.initialize();
-        logger.info('✅ Firebase database ready');
+        logger.info('✅ Firebase Firestore ready');
+        
+        // Initialize Cloudinary for image storage
+        logger.info('☁️ Initializing Cloudinary storage...');
+        cloudinary.initialize();
+        logger.info('✅ Cloudinary storage ready');
         
         // Login to Discord
         logger.info('🔑 Logging into Discord...');
@@ -225,4 +231,5 @@ client.once('ready', () => {
     logger.info(`🎉 ${client.user.tag} is online and ready!`);
     logger.info(`📊 Serving ${client.guilds.cache.size} guilds`);
     logger.info(`👥 Total users: ${client.users.cache.size}`);
+    logger.info(`☁️ Cloudinary storage active with ${process.env.CLOUDINARY_CLOUD_NAME}`);
 });

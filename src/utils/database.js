@@ -34,7 +34,8 @@ class FirebaseDatabase {
                         projectId: process.env.FIREBASE_PROJECT_ID,
                         privateKey: privateKey,
                         clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-                    })
+                    }),
+                    storageBucket: `${process.env.FIREBASE_PROJECT_ID}.appspot.com`
                 });
                 logger.info('🔥 Firebase initialized with environment variables');
             } else {
@@ -42,7 +43,8 @@ class FirebaseDatabase {
                 try {
                     const serviceAccount = require('../../serviceAccountKey.json');
                     admin.initializeApp({
-                        credential: admin.credential.cert(serviceAccount)
+                        credential: admin.credential.cert(serviceAccount),
+                        storageBucket: `${serviceAccount.project_id}.appspot.com`
                     });
                     logger.info('🔥 Firebase initialized with service account file');
                 } catch (fileError) {
@@ -164,6 +166,16 @@ class FirebaseDatabase {
         const db = this.getFirestore();
         await db.collection('matches').doc(matchId).update({
             ...updateData,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+        return this.getMatch(matchId);
+    }
+
+    async updateMatchScreenshots(matchId, screenshotUrls) {
+        const db = this.getFirestore();
+        await db.collection('matches').doc(matchId).update({
+            screenshots: screenshotUrls,
+            screenshotStorageType: 'firebase',
             updatedAt: admin.firestore.FieldValue.serverTimestamp()
         });
         return this.getMatch(matchId);

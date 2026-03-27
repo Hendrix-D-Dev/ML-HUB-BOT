@@ -2,6 +2,7 @@ const { Events, EmbedBuilder, ChannelType } = require('discord.js');
 const config = require('../config');
 const logger = require('../utils/logger');
 const database = require('../utils/database');
+const cloudinary = require('../utils/cloudinary');
 
 module.exports = {
     name: Events.MessageCreate,
@@ -48,22 +49,25 @@ module.exports = {
                     return message.reply({ embeds: [warningEmbed] });
                 }
                 
+                // Show uploading status
+                const uploadingEmbed = new EmbedBuilder()
+                    .setColor(0xFFA500)
+                    .setTitle('📤 Uploading to Cloudinary')
+                    .setDescription(`Uploading ${message.attachments.size} screenshot(s) to permanent cloud storage...\n\n*Cloudinary free tier: 25GB storage, 25GB monthly bandwidth*`)
+                    .setTimestamp();
+                
+                await message.reply({ embeds: [uploadingEmbed] });
+                
                 // Process screenshots
-                const screenshotUrls = [];
-                const screenshotAttachments = [];
+                const tempUrls = [];
                 
                 message.attachments.forEach(attachment => {
                     if (attachment.contentType?.startsWith('image/')) {
-                        screenshotUrls.push(attachment.url);
-                        screenshotAttachments.push({
-                            url: attachment.url,
-                            name: attachment.name,
-                            size: attachment.size
-                        });
+                        tempUrls.push(attachment.url);
                     }
                 });
                 
-                if (screenshotUrls.length === 0) {
+                if (tempUrls.length === 0) {
                     const errorEmbed = new EmbedBuilder()
                         .setColor(0xFF0000)
                         .setTitle('❌ Invalid File Type')
@@ -73,34 +77,51 @@ module.exports = {
                     return message.reply({ embeds: [errorEmbed] });
                 }
                 
+                // Upload to Cloudinary
+                const uploadedUrls = await cloudinary.uploadMultipleScreenshots(tempUrls, matchId);
+                
+                if (uploadedUrls.length === 0) {
+                    const errorEmbed = new EmbedBuilder()
+                        .setColor(0xFF0000)
+                        .setTitle('❌ Upload Failed')
+                        .setDescription('Failed to upload screenshots to Cloudinary. Please try again.')
+                        .setTimestamp();
+                    
+                    return message.reply({ embeds: [errorEmbed] });
+                }
+                
                 // Add screenshots to match in database
                 const currentScreenshots = match.screenshots || [];
-                const updatedScreenshots = [...currentScreenshots, ...screenshotUrls];
-                await database.updateMatch(matchId, { screenshots: updatedScreenshots });
+                const updatedScreenshots = [...currentScreenshots, ...uploadedUrls];
+                await database.updateMatchScreenshots(matchId, updatedScreenshots);
                 
                 // Create a confirmation embed with the actual images
                 const confirmEmbed = new EmbedBuilder()
                     .setColor(0x00FF00)
-                    .setTitle('✅ Screenshot(s) Added')
-                    .setDescription(`${screenshotUrls.length} screenshot(s) have been added to match **${matchId}**`)
+                    .setTitle('✅ Screenshot(s) Added Permanently')
+                    .setDescription(`${uploadedUrls.length} screenshot(s) have been permanently stored in Cloudinary for match **${matchId}**`)
                     .addFields(
                         { name: 'Total Screenshots', value: updatedScreenshots.length.toString(), inline: true },
-                        { name: 'Status', value: match.status.toUpperCase(), inline: true }
+                        { name: 'Status', value: match.status.toUpperCase(), inline: true },
+                        { name: 'Storage', value: '☁️ Cloudinary (25GB free)', inline: true }
                     )
                     .setTimestamp();
                 
-                // Add the actual images to the embed if there's only one
-                if (screenshotUrls.length === 1) {
-                    confirmEmbed.setImage(screenshotUrls[0]);
-                    confirmEmbed.addFields({ name: '📸 Screenshot', value: `[Click to view full size](${screenshotUrls[0]})`, inline: false });
+                // Add the actual images to the embed
+                if (uploadedUrls.length === 1) {
+                    confirmEmbed.setImage(uploadedUrls[0]);
+                    confirmEmbed.addFields({ name: '📸 Screenshot', value: `[Click to view full size](${uploadedUrls[0]})`, inline: false });
                 } else {
-                    const links = screenshotUrls.map((url, i) => `[Screenshot ${i + 1}](${url})`).join(' • ');
-                    confirmEmbed.addFields({ name: '📸 Screenshots Uploaded', value: links, inline: false });
+                    // For multiple images, create a gallery-like display
+                    const imageFields = uploadedUrls.map((url, i) => `[Screenshot ${i + 1}](${url})`).join('\n');
+                    confirmEmbed.addFields({ name: '📸 Screenshots Uploaded', value: imageFields, inline: false });
+                    confirmEmbed.setImage(uploadedUrls[0]);
+                    confirmEmbed.addFields({ name: 'ℹ️ Preview', value: `Showing first screenshot. Click the links above to view all ${uploadedUrls.length} screenshots.`, inline: false });
                 }
                 
                 await message.reply({ embeds: [confirmEmbed] });
                 
-                // Update the original match message in submission channel to show screenshots
+                // Update the original match message in submission channel
                 const submissionChannel = message.guild.channels.cache.get(config.matchSubmissionChannelId);
                 if (submissionChannel && match.messageId) {
                     try {
@@ -118,11 +139,11 @@ module.exports = {
                         // Update or add screenshot field
                         const existingField = originalEmbed.data.fields?.find(f => f.name === '📸 Screenshots');
                         if (existingField) {
-                            existingField.value = `${updatedScreenshots.length} screenshot(s) uploaded\n${screenshotDisplay}`;
+                            existingField.value = `${updatedScreenshots.length} screenshot(s) uploaded (Cloudinary)\n${screenshotDisplay}`;
                         } else {
                             originalEmbed.addFields({ 
                                 name: '📸 Screenshots', 
-                                value: `${updatedScreenshots.length} screenshot(s) uploaded\n${screenshotDisplay}`, 
+                                value: `${updatedScreenshots.length} screenshot(s) uploaded (Cloudinary)\n${screenshotDisplay}`, 
                                 inline: false 
                             });
                         }
@@ -137,15 +158,20 @@ module.exports = {
                 // Send a message in the private thread showing the uploaded screenshots
                 const screenshotDisplayEmbed = new EmbedBuilder()
                     .setColor(0x00FF00)
-                    .setTitle('📸 Uploaded Screenshots')
-                    .setDescription(`Here are the screenshots uploaded for match **${matchId}**:`)
+                    .setTitle('📸 Uploaded Screenshots (Cloudinary)')
+                    .setDescription(`Here are the permanently stored screenshots for match **${matchId}**:\n\n*These links will never expire!*`)
+                    .addFields(
+                        { name: 'Storage Info', value: '☁️ Cloudinary Free Tier: 25GB storage • 25GB monthly bandwidth • Auto-optimized', inline: false }
+                    )
                     .setTimestamp();
                 
-                if (screenshotUrls.length === 1) {
-                    screenshotDisplayEmbed.setImage(screenshotUrls[0]);
+                if (uploadedUrls.length === 1) {
+                    screenshotDisplayEmbed.setImage(uploadedUrls[0]);
                 } else {
-                    const imageLinks = screenshotUrls.map((url, i) => `[Screenshot ${i + 1}](${url})`).join('\n');
+                    const imageLinks = uploadedUrls.map((url, i) => `[Screenshot ${i + 1}](${url})`).join('\n');
                     screenshotDisplayEmbed.addFields({ name: 'Screenshots', value: imageLinks, inline: false });
+                    screenshotDisplayEmbed.setImage(uploadedUrls[0]);
+                    screenshotDisplayEmbed.addFields({ name: 'ℹ️ Note', value: `Showing preview of first screenshot. Click the links above to view all ${uploadedUrls.length} screenshots.`, inline: false });
                 }
                 
                 await message.channel.send({ embeds: [screenshotDisplayEmbed] });
@@ -153,11 +179,11 @@ module.exports = {
                 // Delete the user's original message to keep thread clean
                 await message.delete();
                 
-                logger.info(`${screenshotUrls.length} screenshots added to match: ${matchId} by ${message.author.tag}`);
+                logger.info(`${uploadedUrls.length} screenshots permanently stored in Cloudinary for match: ${matchId} by ${message.author.tag}`);
             }
         }
         
-        // Handle complaint channel messages
+        // Handle complaint channel messages (keep existing code)
         if (message.channel.id === config.complaintChannelId) {
             const embed = new EmbedBuilder()
                 .setColor(0xFF0000)
@@ -180,7 +206,7 @@ module.exports = {
             logger.info(`New complaint from ${message.author.tag}`);
         }
         
-        // Handle suggestion channel messages
+        // Handle suggestion channel messages (keep existing code)
         if (message.channel.id === config.suggestionChannelId) {
             const embed = new EmbedBuilder()
                 .setColor(0x00FF00)
