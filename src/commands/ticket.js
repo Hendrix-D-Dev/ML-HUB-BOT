@@ -62,6 +62,11 @@ module.exports = {
             }
         }
         
+        // For close command, defer immediately to prevent timeout
+        if (subcommand === 'close') {
+            await interaction.deferReply({ flags: 64 });
+        }
+        
         switch (subcommand) {
             case 'create':
                 await this.createTicket(interaction);
@@ -98,10 +103,10 @@ module.exports = {
                 )
                 .setTimestamp();
             
-            return interaction.reply({
-                embeds: [embed],
-                flags: 64
-            });
+            if (interaction.deferred) {
+                return interaction.editReply({ embeds: [embed] });
+            }
+            return interaction.reply({ embeds: [embed], flags: 64 });
         }
         
         // Create ticket ID
@@ -121,7 +126,7 @@ module.exports = {
                 channelName = 'Suggestions';
                 break;
             case 'support':
-                targetChannelId = config.ticketCategoryId; // Use the ticket category channel for support
+                targetChannelId = config.ticketChannelId || config.ticketCategoryId;
                 channelName = 'Tickets';
                 break;
         }
@@ -185,15 +190,18 @@ module.exports = {
                 components: [row] 
             });
             
-            await interaction.reply({
-                content: `✅ Your ${type} has been submitted to #${channelName.toLowerCase()}.\n**Ticket ID:** \`${ticketId}\`\n\nUse \`/ticket list\` to see your open tickets or \`/ticket close ticket_id:${ticketId}\` to close this ticket.`,
-                flags: 64
-            });
+            const replyContent = `✅ Your ${type} has been submitted to #${channelName.toLowerCase()}.\n**Ticket ID:** \`${ticketId}\`\n\nUse \`/ticket list\` to see your open tickets or \`/ticket close ticket_id:${ticketId}\` to close this ticket.`;
+            
+            if (interaction.deferred) {
+                return interaction.editReply({ content: replyContent });
+            }
+            return interaction.reply({ content: replyContent, flags: 64 });
         } else {
-            await interaction.reply({
-                content: '❌ Could not find the target channel. Please contact an administrator.',
-                flags: 64
-            });
+            const errorMsg = '❌ Could not find the target channel. Please contact an administrator.';
+            if (interaction.deferred) {
+                return interaction.editReply({ content: errorMsg });
+            }
+            return interaction.reply({ content: errorMsg, flags: 64 });
         }
         
         logger.info(`Ticket created: ${ticketId} by ${interaction.user.tag}`);
@@ -213,6 +221,9 @@ module.exports = {
                 )
                 .setTimestamp();
             
+            if (interaction.deferred) {
+                return interaction.editReply({ embeds: [embed] });
+            }
             return interaction.reply({ embeds: [embed], flags: 64 });
         }
         
@@ -232,7 +243,10 @@ module.exports = {
         
         embed.setFooter({ text: 'Use /ticket close with the ticket ID to close a ticket' });
         
-        await interaction.reply({ embeds: [embed], flags: 64 });
+        if (interaction.deferred) {
+            return interaction.editReply({ embeds: [embed] });
+        }
+        return interaction.reply({ embeds: [embed], flags: 64 });
     },
     
     async closeTicket(interaction) {
@@ -253,7 +267,7 @@ module.exports = {
                 )
                 .setTimestamp();
             
-            return interaction.reply({ embeds: [embed], flags: 64 });
+            return interaction.editReply({ embeds: [embed] });
         }
         
         // Check if user owns the ticket or is admin/mod
@@ -261,16 +275,14 @@ module.exports = {
         const isMod = interaction.member.roles.cache.has(config.modRoleId);
         
         if (ticket.userId !== userId && !isAdmin && !isMod) {
-            return interaction.reply({
-                content: '❌ You can only close your own tickets! Use `/ticket list` to see your tickets.',
-                flags: 64
+            return interaction.editReply({
+                content: '❌ You can only close your own tickets! Use `/ticket list` to see your tickets.'
             });
         }
         
         if (ticket.status === 'closed') {
-            return interaction.reply({
-                content: '❌ This ticket is already closed!',
-                flags: 64
+            return interaction.editReply({
+                content: '❌ This ticket is already closed!'
             });
         }
         
@@ -291,7 +303,7 @@ module.exports = {
                 targetChannelId = config.suggestionChannelId;
                 break;
             case 'support':
-                targetChannelId = config.ticketCategoryId; // Use the ticket category channel
+                targetChannelId = config.ticketChannelId || config.ticketCategoryId;
                 break;
         }
         
@@ -309,30 +321,33 @@ module.exports = {
                     .setTimestamp();
                 
                 // Try to find and update the original message
-                const messages = await targetChannel.messages.fetch({ limit: 50 });
-                const ticketMessage = messages.find(m => 
-                    m.embeds[0]?.fields?.some(f => f.value === ticketId)
-                );
-                
-                if (ticketMessage) {
-                    const row = new ActionRowBuilder()
-                        .addComponents(
-                            new ButtonBuilder()
-                                .setCustomId(`ticket_closed_${ticketId}`)
-                                .setLabel('Closed')
-                                .setStyle(ButtonStyle.Secondary)
-                                .setDisabled(true)
-                        );
-                    await ticketMessage.edit({ components: [row] });
+                try {
+                    const messages = await targetChannel.messages.fetch({ limit: 50 });
+                    const ticketMessage = messages.find(m => 
+                        m.embeds[0]?.fields?.some(f => f.value === ticketId)
+                    );
+                    
+                    if (ticketMessage) {
+                        const row = new ActionRowBuilder()
+                            .addComponents(
+                                new ButtonBuilder()
+                                    .setCustomId(`ticket_closed_${ticketId}`)
+                                    .setLabel('Closed')
+                                    .setStyle(ButtonStyle.Secondary)
+                                    .setDisabled(true)
+                            );
+                        await ticketMessage.edit({ components: [row] });
+                    }
+                } catch (error) {
+                    logger.error(`Error updating ticket message: ${error.message}`);
                 }
                 
                 await targetChannel.send({ embeds: [embed] });
             }
         }
         
-        await interaction.reply({
-            content: `✅ Ticket **${ticketId}** has been closed.\n\nYou can now create new tickets if needed.`,
-            flags: 64
+        await interaction.editReply({
+            content: `✅ Ticket **${ticketId}** has been closed.\n\nYou can now create new tickets if needed.`
         });
         
         logger.info(`Ticket closed: ${ticketId} by ${interaction.user.tag}`);
