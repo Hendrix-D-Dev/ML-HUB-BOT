@@ -8,7 +8,7 @@ module.exports = {
     customId: /^ticket_close_.+$/,
     
     async execute(interaction) {
-        // Defer the reply immediately to prevent timeout
+        // Defer the reply to prevent timeout, but don't send a message
         await interaction.deferReply({ flags: 64 });
         
         const ticketId = interaction.customId.replace('ticket_close_', '');
@@ -52,7 +52,15 @@ module.exports = {
         const row = new ActionRowBuilder().addComponents(reasonInput);
         modal.addComponents(row);
         
-        // Show the modal - this will replace the defer reply
+        // Show the modal - this will replace the deferred reply
+        // We need to delete the deferred reply first
+        try {
+            await interaction.deleteReply();
+        } catch (error) {
+            // If delete fails, continue anyway
+            logger.debug('Could not delete deferred reply, continuing...');
+        }
+        
         await interaction.showModal(modal);
         
         logger.info(`Close ticket modal shown for: ${ticketId} by ${interaction.user.tag}`);

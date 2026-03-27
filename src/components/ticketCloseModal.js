@@ -8,7 +8,7 @@ module.exports = {
     customId: /^ticket_close_modal_.+$/,
     
     async execute(interaction) {
-        // Defer the reply for the modal
+        // Defer the reply for the modal - this is important!
         await interaction.deferReply({ flags: 64 });
         
         const ticketId = interaction.customId.replace('ticket_close_modal_', '');
@@ -79,6 +79,7 @@ module.exports = {
             }
         }
         
+        // Send success message
         await interaction.editReply({
             content: `✅ Ticket **${ticketId}** has been closed.`
         });
