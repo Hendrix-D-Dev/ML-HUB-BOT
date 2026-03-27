@@ -25,7 +25,7 @@ client.commands = new Collection();
 client.buttonHandlers = new Collection();
 client.modalHandlers = new Collection();
 
-// Load commands
+// Load commands FIRST
 const commands = [];
 const commandsPath = path.join(__dirname, 'commands');
 const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
@@ -59,7 +59,7 @@ for (const file of eventFiles) {
     logger.info(`Loaded event: ${event.name}`);
 }
 
-// Load components (buttons, modals) - Supports both single and array exports
+// Load components (buttons, modals)
 const componentsPath = path.join(__dirname, 'components');
 if (fs.existsSync(componentsPath)) {
     const componentFiles = fs.readdirSync(componentsPath).filter(file => file.endsWith('.js'));
@@ -68,7 +68,6 @@ if (fs.existsSync(componentsPath)) {
         const filePath = path.join(componentsPath, file);
         const component = require(filePath);
         
-        // Handle both single exports and array exports
         const components = Array.isArray(component) ? component : [component];
         
         for (const comp of components) {
@@ -85,46 +84,48 @@ if (fs.existsSync(componentsPath)) {
     }
 }
 
-// Register slash commands
-const rest = new REST({ version: '10' }).setToken(config.token);
-
-(async () => {
+// Register slash commands and start bot
+async function startBot() {
     try {
-        logger.info('Registering slash commands...');
+        // Initialize Firebase
+        await database.initialize();
+        logger.info('🔥 Firebase database ready');
+        
+        // Register slash commands BEFORE login
+        const rest = new REST({ version: '10' }).setToken(config.token);
+        
+        logger.info('🔄 Registering slash commands...');
         
         if (config.guildId) {
             await rest.put(
                 Routes.applicationGuildCommands(config.clientId, config.guildId),
                 { body: commands }
             );
-            logger.info('Guild commands registered successfully');
+            logger.info('✅ Guild commands registered successfully');
         } else {
             await rest.put(
                 Routes.applicationCommands(config.clientId),
                 { body: commands }
             );
-            logger.info('Global commands registered successfully');
+            logger.info('✅ Global commands registered successfully');
         }
-    } catch (error) {
-        logger.error(`Error registering commands: ${error.message}`);
-    }
-})();
-
-// Initialize Firebase and login
-(async () => {
-    try {
-        // Initialize Firebase
-        await database.initialize();
-        logger.info('🔥 Firebase database ready');
         
-        // Login to Discord
+        // Wait a moment for commands to propagate
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        // Now login to Discord
         await client.login(config.token);
         logger.info('🤖 Discord bot logged in');
+        
     } catch (error) {
         logger.error(`Failed to start: ${error.message}`);
+        logger.error(error.stack);
         process.exit(1);
     }
-})();
+}
+
+// Start the bot
+startBot();
 
 // Handle process termination
 process.on('SIGINT', async () => {

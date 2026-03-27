@@ -11,7 +11,7 @@ module.exports = {
         // Set bot status
         client.user.setPresence({
             activities: [{ 
-                name: 'Mobile Legends | !help', 
+                name: 'Mobile Legends | /help', 
                 type: 3 // Watching
             }],
             status: 'online'
