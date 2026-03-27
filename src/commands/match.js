@@ -14,7 +14,7 @@ module.exports = {
         .addSubcommand(subcommand =>
             subcommand
                 .setName('verify')
-                .setDescription('Verify a match submission (Admin/Mod only)')
+                .setDescription('Verify a match submission')
                 .addStringOption(option =>
                     option.setName('matchid')
                         .setDescription('Match ID to verify')
@@ -22,7 +22,7 @@ module.exports = {
         .addSubcommand(subcommand =>
             subcommand
                 .setName('reject')
-                .setDescription('Reject a match submission (Admin/Mod only)')
+                .setDescription('Reject a match submission')
                 .addStringOption(option =>
                     option.setName('matchid')
                         .setDescription('Match ID to reject')
@@ -82,21 +82,21 @@ module.exports = {
             .setCustomId('squad1_score')
             .setLabel('Squad 1 Score')
             .setStyle(TextInputStyle.Short)
-            .setPlaceholder('Enter the score for Squad 1 (e.g., 2-0, 3-1)')
+            .setPlaceholder('Enter the score for Squad 1')
             .setRequired(true);
         
         const squad2ScoreInput = new TextInputBuilder()
             .setCustomId('squad2_score')
             .setLabel('Squad 2 Score')
             .setStyle(TextInputStyle.Short)
-            .setPlaceholder('Enter the score for Squad 2 (e.g., 0-2, 1-3)')
+            .setPlaceholder('Enter the score for Squad 2')
             .setRequired(true);
         
         const tournamentInput = new TextInputBuilder()
             .setCustomId('tournament')
             .setLabel('Tournament Name')
             .setStyle(TextInputStyle.Short)
-            .setPlaceholder('Enter tournament name (optional)')
+            .setPlaceholder('Optional')
             .setRequired(false);
         
         const row1 = new ActionRowBuilder().addComponents(squad1NameInput);
@@ -116,14 +116,14 @@ module.exports = {
         const match = await database.getMatch(matchId);
         if (!match) {
             return interaction.reply({
-                content: '❌ Match not found!',
+                content: '❌ Match not found.',
                 flags: 64
             });
         }
         
         if (match.status === 'verified') {
             return interaction.reply({
-                content: '❌ This match is already verified!',
+                content: '❌ This match is already verified.',
                 flags: 64
             });
         }
@@ -137,17 +137,14 @@ module.exports = {
             }
         });
         
-        // Send notification to submission channel
         const submissionChannel = interaction.guild.channels.cache.get(config.matchSubmissionChannelId);
         if (submissionChannel) {
             const embed = new EmbedBuilder()
                 .setColor(0x00FF00)
                 .setTitle('✅ Match Verified')
-                .setDescription(`Match **${matchId}** has been verified by ${interaction.user.tag}`)
+                .setDescription(`Match **${matchId}** has been verified`)
                 .addFields(
-                    { name: '🏆 Squad 1', value: `${match.squad1.name} (${match.squad1.score})`, inline: true },
-                    { name: '🏆 Squad 2', value: `${match.squad2.name} (${match.squad2.score})`, inline: true },
-                    { name: '👑 Winner', value: this.determineWinner(match.squad1.score, match.squad2.score, match.squad1.name, match.squad2.name), inline: true }
+                    { name: 'Winner', value: this.determineWinner(match.squad1.score, match.squad2.score, match.squad1.name, match.squad2.name), inline: true }
                 )
                 .setTimestamp();
             
@@ -155,7 +152,7 @@ module.exports = {
         }
         
         await interaction.reply({
-            content: `✅ Match **${matchId}** verified successfully!`,
+            content: `✅ Match **${matchId}** verified.`,
             flags: 64
         });
         
@@ -169,14 +166,14 @@ module.exports = {
         const match = await database.getMatch(matchId);
         if (!match) {
             return interaction.reply({
-                content: '❌ Match not found!',
+                content: '❌ Match not found.',
                 flags: 64
             });
         }
         
         if (match.status === 'verified') {
             return interaction.reply({
-                content: '❌ This match is already verified!',
+                content: '❌ This match is already verified.',
                 flags: 64
             });
         }
@@ -186,13 +183,12 @@ module.exports = {
             rejectionReason: reason
         });
         
-        // Send notification to submission channel
         const submissionChannel = interaction.guild.channels.cache.get(config.matchSubmissionChannelId);
         if (submissionChannel) {
             const embed = new EmbedBuilder()
                 .setColor(0xFF0000)
                 .setTitle('❌ Match Rejected')
-                .setDescription(`Match **${matchId}** has been rejected by ${interaction.user.tag}`)
+                .setDescription(`Match **${matchId}** has been rejected`)
                 .addFields(
                     { name: 'Reason', value: reason, inline: true }
                 )
@@ -202,7 +198,7 @@ module.exports = {
         }
         
         await interaction.reply({
-            content: `✅ Match **${matchId}** rejected!`,
+            content: `✅ Match **${matchId}** rejected.`,
             flags: 64
         });
         
@@ -215,7 +211,7 @@ module.exports = {
         const match = await database.getMatch(matchId);
         if (!match) {
             return interaction.reply({
-                content: '❌ Match not found!',
+                content: '❌ Match not found.',
                 flags: 64
             });
         }
@@ -224,27 +220,17 @@ module.exports = {
         
         const embed = new EmbedBuilder()
             .setColor(0x0099FF)
-            .setTitle(`🎮 Match Details: ${matchId}`)
+            .setTitle(`Match Details: ${matchId}`)
             .addFields(
-                { name: '📅 Date', value: new Date(match.matchDate).toLocaleString(), inline: true },
-                { name: '🏆 Tournament', value: match.tournament || 'Regular Match', inline: true },
-                { name: '📊 Status', value: match.status.toUpperCase(), inline: true },
+                { name: 'Date', value: new Date(match.matchDate).toLocaleString(), inline: true },
+                { name: 'Tournament', value: match.tournament || 'Regular Match', inline: true },
+                { name: 'Status', value: match.status.toUpperCase(), inline: true },
                 { name: '\u200B', value: '\u200B', inline: false },
-                { name: '🏆 Squad 1', value: `**${match.squad1.name}**\nScore: ${match.squad1.score}`, inline: true },
-                { name: '🏆 Squad 2', value: `**${match.squad2.name}**\nScore: ${match.squad2.score}`, inline: true },
-                { name: '👑 Winner', value: winner, inline: true },
-                { name: '\u200B', value: '\u200B', inline: false },
-                { name: '👤 Submitted By', value: match.submittedBy.username, inline: true }
+                { name: 'Squad 1', value: `**${match.squad1.name}**\nScore: ${match.squad1.score}`, inline: true },
+                { name: 'Squad 2', value: `**${match.squad2.name}**\nScore: ${match.squad2.score}`, inline: true },
+                { name: 'Winner', value: winner, inline: true }
             )
             .setTimestamp();
-        
-        if (match.screenshots && match.screenshots.length > 0) {
-            embed.addFields({ name: '📸 Screenshots', value: match.screenshots.join('\n'), inline: false });
-        }
-        
-        if (match.status === 'verified' && match.verifiedBy) {
-            embed.addFields({ name: '✅ Verified By', value: match.verifiedBy.username, inline: true });
-        }
         
         await interaction.reply({ embeds: [embed], flags: 64 });
     },

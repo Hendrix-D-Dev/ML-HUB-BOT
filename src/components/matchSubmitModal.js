@@ -8,7 +8,6 @@ module.exports = {
     customId: 'match_submit_modal',
     
     async execute(interaction) {
-        // Defer reply immediately to prevent timeout
         await interaction.deferReply({ flags: 64 });
         
         const squad1Name = interaction.fields.getTextInputValue('squad1_name');
@@ -17,10 +16,8 @@ module.exports = {
         const squad2Score = interaction.fields.getTextInputValue('squad2_score');
         const tournament = interaction.fields.getTextInputValue('tournament') || 'Regular Match';
         
-        // Create match ID
         const matchId = `ML-${Date.now()}-${Math.random().toString(36).substr(2, 4).toUpperCase()}`;
         
-        // Determine winner
         const parseScore = (score) => {
             if (typeof score === 'number') return score;
             const parts = score.toString().split('-');
@@ -34,7 +31,6 @@ module.exports = {
         else if (s2 > s1) winner = squad2Name;
         else winner = 'Tie';
         
-        // Create match in database
         const matchData = {
             matchId,
             squad1: { name: squad1Name, score: squad1Score },
@@ -52,7 +48,6 @@ module.exports = {
         
         await database.createMatch(matchData);
         
-        // Create embed for submission channel
         const embed = new EmbedBuilder()
             .setColor(0x0099FF)
             .setTitle('🎮 Match Result Submission')
@@ -65,19 +60,16 @@ module.exports = {
                 { name: '🏆 Squad 2', value: `**${squad2Name}**\nScore: ${squad2Score}`, inline: true },
                 { name: '👑 Winner', value: winner, inline: true }
             )
-            .setFooter({ text: 'Screenshots are being collected privately from the submitter' })
             .setTimestamp();
         
-        // Send to match submission channel
         const submissionChannel = interaction.guild.channels.cache.get(config.matchSubmissionChannelId);
         if (!submissionChannel) {
             logger.error('Match submission channel not found');
             return interaction.editReply({
-                content: '❌ Match submission channel not configured! Please contact an administrator.'
+                content: '❌ Match submission channel not configured!'
             });
         }
         
-        // Create buttons for staff
         const row = new ActionRowBuilder()
             .addComponents(
                 new ButtonBuilder()
@@ -98,34 +90,21 @@ module.exports = {
             components: [row] 
         });
         
-        // Store message ID for later updates
         await database.updateMatch(matchId, { messageId: message.id });
         
-        // Create a private thread for screenshot uploads
         const thread = await message.startThread({
             name: `📸 Screenshots for ${matchId}`,
             autoArchiveDuration: 60,
-            reason: 'Private screenshot submission thread'
+            reason: 'Screenshot submission thread'
         });
         
-        // Store thread ID in database
         await database.updateMatch(matchId, { threadId: thread.id });
-        
-        // Add the submitter to the thread
         await thread.members.add(interaction.user.id);
         
-        // Send initial instructions in the private thread with visual example
         const threadEmbed = new EmbedBuilder()
             .setColor(0x0099FF)
-            .setTitle('📸 Upload Match Screenshots')
-            .setDescription(`**Match ID:** ${matchId}\n**Squads:** ${squad1Name} vs ${squad2Name}\n\nPlease upload your match result screenshots here. These screenshots will only be visible to you and staff members.`)
-            .addFields(
-                { name: '📤 How to Upload', value: 'Simply **drag and drop** your screenshots into this thread or click the **+ button** and select images from your device.', inline: false },
-                { name: '✅ Supported Formats', value: 'PNG, JPG, JPEG, GIF, WEBP', inline: true },
-                { name: '📏 Max Size', value: 'Up to 10MB per image', inline: true },
-                { name: '📋 Instructions', value: '1️⃣ Take screenshots of your match results\n2️⃣ Drag them here or click the + button\n3️⃣ Wait for confirmation message\n4️⃣ Staff will verify the match after review', inline: false }
-            )
-            .setFooter({ text: 'You can upload multiple screenshots at once!' })
+            .setTitle('📸 Upload Screenshots')
+            .setDescription(`Please upload your match result screenshots here.\n\n**Match ID:** ${matchId}`)
             .setTimestamp();
         
         await thread.send({ 
@@ -133,22 +112,8 @@ module.exports = {
             embeds: [threadEmbed]
         });
         
-        // Send a demo message showing how it will look
-        const demoEmbed = new EmbedBuilder()
-            .setColor(0x00FF00)
-            .setTitle('✅ Example: How Your Screenshot Will Appear')
-            .setDescription('When you upload a screenshot, it will appear like this in the thread and also be visible to staff in the #match-submissions channel.')
-            .addFields(
-                { name: '📸 Your Screenshot', value: 'Once uploaded, the image will be displayed here with a confirmation message.', inline: false }
-            )
-            .setImage('https://i.imgur.com/placeholder.png')
-            .setFooter({ text: 'Your uploaded screenshots will replace this example' });
-        
-        await thread.send({ embeds: [demoEmbed] });
-        
-        // Send initial reply to user
         await interaction.editReply({
-            content: `✅ Match result submitted successfully!\n\n**Match ID:** \`${matchId}\`\n**Match:** ${squad1Name} vs ${squad2Name}\n**Score:** ${squad1Score} - ${squad2Score}\n\n📸 A private thread has been created for you to upload your match screenshots. Please upload them there.\n🔗 [Click here to view your private thread](${thread.url})`
+            content: `✅ Match result submitted successfully!\n**Match ID:** \`${matchId}\`\n**Match:** ${squad1Name} vs ${squad2Name}\n**Score:** ${squad1Score} - ${squad2Score}\n\n📸 Please upload your screenshots in the private thread.`
         });
         
         logger.info(`Match submitted: ${matchId} by ${interaction.user.tag}`);
