@@ -84,16 +84,11 @@ if (fs.existsSync(componentsPath)) {
     }
 }
 
-// Register slash commands and start bot
-async function startBot() {
+// Register slash commands FIRST before anything else
+async function registerCommands() {
+    const rest = new REST({ version: '10' }).setToken(config.token);
+    
     try {
-        // Initialize Firebase
-        await database.initialize();
-        logger.info('🔥 Firebase database ready');
-        
-        // Register slash commands BEFORE login
-        const rest = new REST({ version: '10' }).setToken(config.token);
-        
         logger.info('🔄 Registering slash commands...');
         
         if (config.guildId) {
@@ -109,11 +104,31 @@ async function startBot() {
             );
             logger.info('✅ Global commands registered successfully');
         }
+        return true;
+    } catch (error) {
+        logger.error(`Failed to register commands: ${error.message}`);
+        return false;
+    }
+}
+
+// Start the bot
+async function startBot() {
+    try {
+        // Register commands first
+        const commandsRegistered = await registerCommands();
+        
+        if (!commandsRegistered) {
+            logger.warn('Command registration failed, but continuing startup...');
+        }
         
         // Wait a moment for commands to propagate
         await new Promise(resolve => setTimeout(resolve, 2000));
         
-        // Now login to Discord
+        // Initialize Firebase
+        await database.initialize();
+        logger.info('🔥 Firebase database ready');
+        
+        // Login to Discord
         await client.login(config.token);
         logger.info('🤖 Discord bot logged in');
         
