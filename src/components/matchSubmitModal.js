@@ -62,7 +62,7 @@ module.exports = {
                 { name: '🏆 Squad 2', value: `**${squad2Name}**\nScore: ${squad2Score}`, inline: true },
                 { name: '👑 Winner', value: winner, inline: true }
             )
-            .setFooter({ text: 'Use the buttons below to manage this match' })
+            .setFooter({ text: 'Screenshots are being collected privately from the submitter' })
             .setTimestamp();
         
         // Send to match submission channel
@@ -75,14 +75,9 @@ module.exports = {
             });
         }
         
-        // Create buttons for match management
+        // Create buttons for staff
         const row = new ActionRowBuilder()
             .addComponents(
-                new ButtonBuilder()
-                    .setCustomId(`match_screenshot_${matchId}`)
-                    .setLabel('📸 Add Screenshot')
-                    .setStyle(ButtonStyle.Secondary)
-                    .setEmoji('📸'),
                 new ButtonBuilder()
                     .setCustomId(`match_verify_${matchId}`)
                     .setLabel('✅ Verify')
@@ -104,24 +99,34 @@ module.exports = {
         // Store message ID for later updates
         await database.updateMatch(matchId, { messageId: message.id });
         
-        await interaction.reply({
-            content: `✅ Match result submitted successfully!\n**Match ID:** \`${matchId}\`\n📸 Click the "Add Screenshot" button below to upload your match screenshots.`,
-            flags: 64
+        // Create a private thread for screenshot uploads
+        const thread = await message.startThread({
+            name: `📸 Screenshots for ${matchId}`,
+            autoArchiveDuration: 60,
+            reason: 'Private screenshot submission thread'
         });
         
-        // Send a follow-up with the match details for the user to add screenshots
-        const userRow = new ActionRowBuilder()
-            .addComponents(
-                new ButtonBuilder()
-                    .setCustomId(`match_screenshot_user_${matchId}`)
-                    .setLabel('📸 Add Screenshot')
-                    .setStyle(ButtonStyle.Primary)
-                    .setEmoji('📸')
-            );
+        // Add the submitter to the thread
+        await thread.members.add(interaction.user.id);
         
-        await interaction.followUp({
-            content: `**Match Details:**\n**${squad1Name}** (${squad1Score}) vs **${squad2Name}** (${squad2Score})\n\nClick the button below to upload your match screenshots:`,
-            components: [userRow],
+        // Send initial instructions in the private thread
+        const threadEmbed = new EmbedBuilder()
+            .setColor(0x0099FF)
+            .setTitle('📸 Upload Match Screenshots')
+            .setDescription(`**Match ID:** ${matchId}\n**Squads:** ${squad1Name} vs ${squad2Name}\n\nPlease upload your match result screenshots here. These screenshots will only be visible to you and staff members.`)
+            .addFields(
+                { name: 'Instructions', value: '1. Drag and drop or select your screenshots\n2. You can upload multiple screenshots\n3. Staff will verify the match after all screenshots are uploaded', inline: false }
+            )
+            .setTimestamp();
+        
+        await thread.send({ 
+            content: `${interaction.user}`,
+            embeds: [threadEmbed]
+        });
+        
+        // Send initial reply to user
+        await interaction.reply({
+            content: `✅ Match result submitted successfully!\n\n**Match ID:** \`${matchId}\`\n**Match:** ${squad1Name} vs ${squad2Name}\n**Score:** ${squad1Score} - ${squad2Score}\n\n📸 A private thread has been created for you to upload your match screenshots. Please upload them there.\n🔗 [Click here to view your private thread](${thread.url})`,
             flags: 64
         });
         
