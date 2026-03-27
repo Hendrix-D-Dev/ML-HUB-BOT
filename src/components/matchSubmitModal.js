@@ -8,6 +8,9 @@ module.exports = {
     customId: 'match_submit_modal',
     
     async execute(interaction) {
+        // Defer reply immediately to prevent timeout
+        await interaction.deferReply({ flags: 64 });
+        
         const squad1Name = interaction.fields.getTextInputValue('squad1_name');
         const squad2Name = interaction.fields.getTextInputValue('squad2_name');
         const squad1Score = interaction.fields.getTextInputValue('squad1_score');
@@ -69,9 +72,8 @@ module.exports = {
         const submissionChannel = interaction.guild.channels.cache.get(config.matchSubmissionChannelId);
         if (!submissionChannel) {
             logger.error('Match submission channel not found');
-            return interaction.reply({
-                content: '❌ Match submission channel not configured! Please contact an administrator.',
-                flags: 64
+            return interaction.editReply({
+                content: '❌ Match submission channel not configured! Please contact an administrator.'
             });
         }
         
@@ -106,17 +108,24 @@ module.exports = {
             reason: 'Private screenshot submission thread'
         });
         
+        // Store thread ID in database
+        await database.updateMatch(matchId, { threadId: thread.id });
+        
         // Add the submitter to the thread
         await thread.members.add(interaction.user.id);
         
-        // Send initial instructions in the private thread
+        // Send initial instructions in the private thread with visual example
         const threadEmbed = new EmbedBuilder()
             .setColor(0x0099FF)
             .setTitle('📸 Upload Match Screenshots')
             .setDescription(`**Match ID:** ${matchId}\n**Squads:** ${squad1Name} vs ${squad2Name}\n\nPlease upload your match result screenshots here. These screenshots will only be visible to you and staff members.`)
             .addFields(
-                { name: 'Instructions', value: '1. Drag and drop or select your screenshots\n2. You can upload multiple screenshots\n3. Staff will verify the match after all screenshots are uploaded', inline: false }
+                { name: '📤 How to Upload', value: 'Simply **drag and drop** your screenshots into this thread or click the **+ button** and select images from your device.', inline: false },
+                { name: '✅ Supported Formats', value: 'PNG, JPG, JPEG, GIF, WEBP', inline: true },
+                { name: '📏 Max Size', value: 'Up to 10MB per image', inline: true },
+                { name: '📋 Instructions', value: '1️⃣ Take screenshots of your match results\n2️⃣ Drag them here or click the + button\n3️⃣ Wait for confirmation message\n4️⃣ Staff will verify the match after review', inline: false }
             )
+            .setFooter({ text: 'You can upload multiple screenshots at once!' })
             .setTimestamp();
         
         await thread.send({ 
@@ -124,10 +133,22 @@ module.exports = {
             embeds: [threadEmbed]
         });
         
+        // Send a demo message showing how it will look
+        const demoEmbed = new EmbedBuilder()
+            .setColor(0x00FF00)
+            .setTitle('✅ Example: How Your Screenshot Will Appear')
+            .setDescription('When you upload a screenshot, it will appear like this in the thread and also be visible to staff in the #match-submissions channel.')
+            .addFields(
+                { name: '📸 Your Screenshot', value: 'Once uploaded, the image will be displayed here with a confirmation message.', inline: false }
+            )
+            .setImage('https://i.imgur.com/placeholder.png')
+            .setFooter({ text: 'Your uploaded screenshots will replace this example' });
+        
+        await thread.send({ embeds: [demoEmbed] });
+        
         // Send initial reply to user
-        await interaction.reply({
-            content: `✅ Match result submitted successfully!\n\n**Match ID:** \`${matchId}\`\n**Match:** ${squad1Name} vs ${squad2Name}\n**Score:** ${squad1Score} - ${squad2Score}\n\n📸 A private thread has been created for you to upload your match screenshots. Please upload them there.\n🔗 [Click here to view your private thread](${thread.url})`,
-            flags: 64
+        await interaction.editReply({
+            content: `✅ Match result submitted successfully!\n\n**Match ID:** \`${matchId}\`\n**Match:** ${squad1Name} vs ${squad2Name}\n**Score:** ${squad1Score} - ${squad2Score}\n\n📸 A private thread has been created for you to upload your match screenshots. Please upload them there.\n🔗 [Click here to view your private thread](${thread.url})`
         });
         
         logger.info(`Match submitted: ${matchId} by ${interaction.user.tag}`);

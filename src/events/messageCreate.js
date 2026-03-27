@@ -50,9 +50,16 @@ module.exports = {
                 
                 // Process screenshots
                 const screenshotUrls = [];
+                const screenshotAttachments = [];
+                
                 message.attachments.forEach(attachment => {
                     if (attachment.contentType?.startsWith('image/')) {
                         screenshotUrls.push(attachment.url);
+                        screenshotAttachments.push({
+                            url: attachment.url,
+                            name: attachment.name,
+                            size: attachment.size
+                        });
                     }
                 });
                 
@@ -66,42 +73,82 @@ module.exports = {
                     return message.reply({ embeds: [errorEmbed] });
                 }
                 
-                // Add screenshots to match
+                // Add screenshots to match in database
                 const currentScreenshots = match.screenshots || [];
                 const updatedScreenshots = [...currentScreenshots, ...screenshotUrls];
                 await database.updateMatch(matchId, { screenshots: updatedScreenshots });
                 
-                // Create confirmation embed
+                // Create a confirmation embed with the actual images
                 const confirmEmbed = new EmbedBuilder()
                     .setColor(0x00FF00)
                     .setTitle('✅ Screenshot(s) Added')
                     .setDescription(`${screenshotUrls.length} screenshot(s) have been added to match **${matchId}**`)
                     .addFields(
-                        { name: 'Total Screenshots', value: updatedScreenshots.length.toString(), inline: true }
+                        { name: 'Total Screenshots', value: updatedScreenshots.length.toString(), inline: true },
+                        { name: 'Status', value: match.status.toUpperCase(), inline: true }
                     )
                     .setTimestamp();
                 
+                // Add the actual images to the embed if there's only one
+                if (screenshotUrls.length === 1) {
+                    confirmEmbed.setImage(screenshotUrls[0]);
+                    confirmEmbed.addFields({ name: '📸 Screenshot', value: `[Click to view full size](${screenshotUrls[0]})`, inline: false });
+                } else {
+                    const links = screenshotUrls.map((url, i) => `[Screenshot ${i + 1}](${url})`).join(' • ');
+                    confirmEmbed.addFields({ name: '📸 Screenshots Uploaded', value: links, inline: false });
+                }
+                
                 await message.reply({ embeds: [confirmEmbed] });
                 
-                // Update the original match message
+                // Update the original match message in submission channel to show screenshots
                 const submissionChannel = message.guild.channels.cache.get(config.matchSubmissionChannelId);
                 if (submissionChannel && match.messageId) {
                     try {
                         const originalMessage = await submissionChannel.messages.fetch(match.messageId);
                         const originalEmbed = EmbedBuilder.from(originalMessage.embeds[0]);
                         
-                        const screenshotField = originalEmbed.data.fields?.find(f => f.name === '📸 Screenshots');
-                        if (screenshotField) {
-                            screenshotField.value = `${updatedScreenshots.length} screenshot(s) uploaded (private thread)`;
+                        // Create a field with clickable screenshot links
+                        let screenshotDisplay = '';
+                        if (updatedScreenshots.length === 1) {
+                            screenshotDisplay = `[View Screenshot](${updatedScreenshots[0]})`;
                         } else {
-                            originalEmbed.addFields({ name: '📸 Screenshots', value: `${updatedScreenshots.length} screenshot(s) uploaded (private thread)`, inline: false });
+                            screenshotDisplay = updatedScreenshots.map((url, i) => `[Screenshot ${i + 1}](${url})`).join('\n');
+                        }
+                        
+                        // Update or add screenshot field
+                        const existingField = originalEmbed.data.fields?.find(f => f.name === '📸 Screenshots');
+                        if (existingField) {
+                            existingField.value = `${updatedScreenshots.length} screenshot(s) uploaded\n${screenshotDisplay}`;
+                        } else {
+                            originalEmbed.addFields({ 
+                                name: '📸 Screenshots', 
+                                value: `${updatedScreenshots.length} screenshot(s) uploaded\n${screenshotDisplay}`, 
+                                inline: false 
+                            });
                         }
                         
                         await originalMessage.edit({ embeds: [originalEmbed] });
+                        
                     } catch (error) {
                         logger.error(`Error updating match message: ${error.message}`);
                     }
                 }
+                
+                // Send a message in the private thread showing the uploaded screenshots
+                const screenshotDisplayEmbed = new EmbedBuilder()
+                    .setColor(0x00FF00)
+                    .setTitle('📸 Uploaded Screenshots')
+                    .setDescription(`Here are the screenshots uploaded for match **${matchId}**:`)
+                    .setTimestamp();
+                
+                if (screenshotUrls.length === 1) {
+                    screenshotDisplayEmbed.setImage(screenshotUrls[0]);
+                } else {
+                    const imageLinks = screenshotUrls.map((url, i) => `[Screenshot ${i + 1}](${url})`).join('\n');
+                    screenshotDisplayEmbed.addFields({ name: 'Screenshots', value: imageLinks, inline: false });
+                }
+                
+                await message.channel.send({ embeds: [screenshotDisplayEmbed] });
                 
                 // Delete the user's original message to keep thread clean
                 await message.delete();
