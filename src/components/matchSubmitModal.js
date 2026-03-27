@@ -62,7 +62,7 @@ module.exports = {
                 { name: '🏆 Squad 2', value: `**${squad2Name}**\nScore: ${squad2Score}`, inline: true },
                 { name: '👑 Winner', value: winner, inline: true }
             )
-            .setFooter({ text: 'Click the button below to add screenshots' })
+            .setFooter({ text: 'Use the buttons below to manage this match' })
             .setTimestamp();
         
         // Send to match submission channel
@@ -75,10 +75,11 @@ module.exports = {
             });
         }
         
+        // Create buttons for match management
         const row = new ActionRowBuilder()
             .addComponents(
                 new ButtonBuilder()
-                    .setCustomId(`match_add_screenshot_${matchId}`)
+                    .setCustomId(`match_screenshot_${matchId}`)
                     .setLabel('📸 Add Screenshot')
                     .setStyle(ButtonStyle.Secondary)
                     .setEmoji('📸'),
@@ -104,7 +105,23 @@ module.exports = {
         await database.updateMatch(matchId, { messageId: message.id });
         
         await interaction.reply({
-            content: `✅ Match result submitted successfully!\n**Match ID:** \`${matchId}\`\n📸 Please click the "Add Screenshot" button in <#${config.matchSubmissionChannelId}> to upload your match screenshots.`,
+            content: `✅ Match result submitted successfully!\n**Match ID:** \`${matchId}\`\n📸 Click the "Add Screenshot" button below to upload your match screenshots.`,
+            flags: 64
+        });
+        
+        // Send a follow-up with the match details for the user to add screenshots
+        const userRow = new ActionRowBuilder()
+            .addComponents(
+                new ButtonBuilder()
+                    .setCustomId(`match_screenshot_user_${matchId}`)
+                    .setLabel('📸 Add Screenshot')
+                    .setStyle(ButtonStyle.Primary)
+                    .setEmoji('📸')
+            );
+        
+        await interaction.followUp({
+            content: `**Match Details:**\n**${squad1Name}** (${squad1Score}) vs **${squad2Name}** (${squad2Score})\n\nClick the button below to upload your match screenshots:`,
+            components: [userRow],
             flags: 64
         });
         

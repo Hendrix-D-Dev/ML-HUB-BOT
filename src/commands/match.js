@@ -250,7 +250,6 @@ module.exports = {
     },
     
     determineWinner(score1, score2, name1, name2) {
-        // Parse scores if they're in format like "2-0"
         const parseScore = (score) => {
             if (typeof score === 'number') return score;
             const parts = score.toString().split('-');
