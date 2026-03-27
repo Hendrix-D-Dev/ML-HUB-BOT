@@ -62,7 +62,7 @@ module.exports = {
             }
         }
         
-        // For close command, defer immediately to prevent timeout
+        // Defer only for close command to prevent timeout
         if (subcommand === 'close') {
             await interaction.deferReply({ flags: 64 });
         }
@@ -103,6 +103,7 @@ module.exports = {
                 )
                 .setTimestamp();
             
+            // Check if interaction is already deferred
             if (interaction.deferred) {
                 return interaction.editReply({ embeds: [embed] });
             }
@@ -192,6 +193,7 @@ module.exports = {
             
             const replyContent = `✅ Your ${type} has been submitted to #${channelName.toLowerCase()}.\n**Ticket ID:** \`${ticketId}\`\n\nUse \`/ticket list\` to see your open tickets or \`/ticket close ticket_id:${ticketId}\` to close this ticket.`;
             
+            // Check if interaction is already deferred
             if (interaction.deferred) {
                 return interaction.editReply({ content: replyContent });
             }
@@ -203,8 +205,6 @@ module.exports = {
             }
             return interaction.reply({ content: errorMsg, flags: 64 });
         }
-        
-        logger.info(`Ticket created: ${ticketId} by ${interaction.user.tag}`);
     },
     
     async listTickets(interaction) {
@@ -221,6 +221,7 @@ module.exports = {
                 )
                 .setTimestamp();
             
+            // Check if interaction is already deferred
             if (interaction.deferred) {
                 return interaction.editReply({ embeds: [embed] });
             }
@@ -243,6 +244,7 @@ module.exports = {
         
         embed.setFooter({ text: 'Use /ticket close with the ticket ID to close a ticket' });
         
+        // Check if interaction is already deferred
         if (interaction.deferred) {
             return interaction.editReply({ embeds: [embed] });
         }
@@ -267,6 +269,7 @@ module.exports = {
                 )
                 .setTimestamp();
             
+            // Use editReply since we deferred in execute
             return interaction.editReply({ embeds: [embed] });
         }
         
@@ -346,6 +349,7 @@ module.exports = {
             }
         }
         
+        // Use editReply since we deferred in execute
         await interaction.editReply({
             content: `✅ Ticket **${ticketId}** has been closed.\n\nYou can now create new tickets if needed.`
         });

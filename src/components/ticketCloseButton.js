@@ -1,4 +1,4 @@
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
+const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder } = require('discord.js');
 const database = require('../utils/database');
 const config = require('../config');
 const logger = require('../utils/logger');
@@ -8,13 +8,15 @@ module.exports = {
     customId: /^ticket_close_.+$/,
     
     async execute(interaction) {
+        // Defer the reply immediately to prevent timeout
+        await interaction.deferReply({ flags: 64 });
+        
         const ticketId = interaction.customId.replace('ticket_close_', '');
         
         const ticket = await database.getTicket(ticketId);
         if (!ticket) {
-            return interaction.reply({
-                content: '❌ Ticket not found!',
-                flags: 64
+            return interaction.editReply({
+                content: '❌ Ticket not found!'
             });
         }
         
@@ -24,16 +26,14 @@ module.exports = {
         const isOwner = ticket.userId === interaction.user.id;
         
         if (!isOwner && !isAdmin && !isMod) {
-            return interaction.reply({
-                content: '❌ You don\'t have permission to close this ticket!',
-                flags: 64
+            return interaction.editReply({
+                content: '❌ You don\'t have permission to close this ticket!'
             });
         }
         
         if (ticket.status === 'closed') {
-            return interaction.reply({
-                content: '❌ This ticket is already closed!',
-                flags: 64
+            return interaction.editReply({
+                content: '❌ This ticket is already closed!'
             });
         }
         
@@ -52,6 +52,9 @@ module.exports = {
         const row = new ActionRowBuilder().addComponents(reasonInput);
         modal.addComponents(row);
         
+        // Show the modal - this will replace the defer reply
         await interaction.showModal(modal);
+        
+        logger.info(`Close ticket modal shown for: ${ticketId} by ${interaction.user.tag}`);
     }
 };
