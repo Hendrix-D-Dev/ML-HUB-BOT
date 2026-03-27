@@ -13,26 +13,20 @@ module.exports = {
             
             if (!command) {
                 logger.warn(`⚠️ No command matching ${interaction.commandName} was found.`);
-                if (!interaction.replied && !interaction.deferred) {
-                    return interaction.reply({ 
-                        content: '❌ Command not found!', 
-                        flags: 64 
-                    });
-                }
-                return;
+                return interaction.reply({ 
+                    content: '❌ Command not found!', 
+                    flags: 64 
+                });
             }
             
             // Check if we're at capacity
             if (client.activeCommands >= client.maxConcurrentCommands) {
                 logger.info(`⏳ Command queueing: ${interaction.commandName} by ${interaction.user.tag}`);
                 client.commandQueue.push({ interaction, command });
-                if (!interaction.replied && !interaction.deferred) {
-                    return interaction.reply({ 
-                        content: '⏳ Server is busy. Your command is queued and will be processed shortly...', 
-                        flags: 64 
-                    });
-                }
-                return;
+                return interaction.reply({ 
+                    content: '⏳ Server is busy. Your command is queued and will be processed shortly...', 
+                    flags: 64 
+                });
             }
             
             // Process command immediately
@@ -68,12 +62,6 @@ module.exports = {
         
         // Handle button interactions
         if (interaction.isButton()) {
-            // Check if already handled to prevent double processing
-            if (interaction.replied || interaction.deferred) {
-                logger.warn(`⚠️ Button ${interaction.customId} was already handled, skipping`);
-                return;
-            }
-            
             let buttonHandler = client.buttonHandlers?.get(interaction.customId);
             
             if (!buttonHandler) {
@@ -92,7 +80,7 @@ module.exports = {
                     logger.info(`✅ Button handled: ${interaction.customId}`);
                 } catch (error) {
                     logger.error(`❌ Error handling button ${interaction.customId}: ${error.message}`);
-                    if (!interaction.replied && !interaction.deferred) {
+                    if (!interaction.replied) {
                         await interaction.reply({ 
                             content: 'There was an error processing this action!', 
                             flags: 64 
@@ -101,23 +89,11 @@ module.exports = {
                 }
             } else {
                 logger.warn(`⚠️ No handler found for button: ${interaction.customId}`);
-                if (!interaction.replied && !interaction.deferred) {
-                    await interaction.reply({ 
-                        content: 'This button is not configured properly. Please contact an administrator.', 
-                        flags: 64 
-                    });
-                }
             }
         }
         
         // Handle modal submissions
         if (interaction.isModalSubmit()) {
-            // Check if already handled to prevent double processing
-            if (interaction.replied || interaction.deferred) {
-                logger.warn(`⚠️ Modal ${interaction.customId} was already handled, skipping`);
-                return;
-            }
-            
             let modalHandler = client.modalHandlers?.get(interaction.customId);
             
             if (!modalHandler) {
@@ -136,7 +112,7 @@ module.exports = {
                     logger.info(`✅ Modal handled: ${interaction.customId}`);
                 } catch (error) {
                     logger.error(`❌ Error handling modal ${interaction.customId}: ${error.message}`);
-                    if (!interaction.replied && !interaction.deferred) {
+                    if (!interaction.replied) {
                         await interaction.reply({ 
                             content: 'There was an error submitting this form!', 
                             flags: 64 
@@ -145,12 +121,6 @@ module.exports = {
                 }
             } else {
                 logger.warn(`⚠️ No handler found for modal: ${interaction.customId}`);
-                if (!interaction.replied && !interaction.deferred) {
-                    await interaction.reply({ 
-                        content: 'This form is not configured properly. Please contact an administrator.', 
-                        flags: 64 
-                    });
-                }
             }
         }
         

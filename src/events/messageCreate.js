@@ -29,7 +29,7 @@ module.exports = {
                     const errorEmbed = new EmbedBuilder()
                         .setColor(0xFF0000)
                         .setTitle('❌ Permission Denied')
-                        .setDescription(`Only the match submitter can upload screenshots.`)
+                        .setDescription('Only the match submitter can upload screenshots.')
                         .setTimestamp();
                     
                     return message.author.send({ embeds: [errorEmbed] });
@@ -45,7 +45,7 @@ module.exports = {
                     return message.reply({ embeds: [warningEmbed] });
                 }
                 
-                // Process screenshots without extra messages
+                // Process screenshots
                 const tempUrls = [];
                 message.attachments.forEach(attachment => {
                     if (attachment.contentType?.startsWith('image/')) {
@@ -63,7 +63,7 @@ module.exports = {
                     return message.reply({ embeds: [errorEmbed] });
                 }
                 
-                // Upload to Cloudinary silently
+                // Upload screenshots
                 const uploadedUrls = await cloudinary.uploadMultipleScreenshots(tempUrls, matchId);
                 
                 if (uploadedUrls.length === 0) {
@@ -76,7 +76,7 @@ module.exports = {
                     return message.reply({ embeds: [errorEmbed] });
                 }
                 
-                // Add screenshots to match in database
+                // Add screenshots to match
                 const currentScreenshots = match.screenshots || [];
                 const updatedScreenshots = [...currentScreenshots, ...uploadedUrls];
                 await database.updateMatchScreenshots(matchId, updatedScreenshots);
@@ -117,7 +117,7 @@ module.exports = {
                 // Delete user's message to keep thread clean
                 await message.delete();
                 
-                logger.info(`${uploadedUrls.length} screenshots added to match: ${matchId}`);
+                logger.info(`${uploadedUrls.length} screenshots added to match: ${matchId} by ${message.author.tag}`);
             }
         }
         
@@ -139,6 +139,8 @@ module.exports = {
                     embeds: [embed]
                 });
             }
+            
+            logger.info(`New complaint from ${message.author.tag}`);
         }
         
         // Handle suggestion channel messages
@@ -162,6 +164,8 @@ module.exports = {
                     embeds: [embed]
                 });
             }
+            
+            logger.info(`New suggestion from ${message.author.tag}`);
         }
     }
 };
