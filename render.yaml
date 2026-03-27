@@ -1,0 +1,40 @@
+services:
+  - type: web
+    name: ml-hub-bot
+    env: node
+    repo: https://github.com/Hendrix-D-Dev/ml-hub-bot
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: DISCORD_TOKEN
+        sync: false
+      - key: CLIENT_ID
+        sync: false
+      - key: GUILD_ID
+        sync: false
+      - key: FIREBASE_PROJECT_ID
+        sync: false
+      - key: FIREBASE_PRIVATE_KEY
+        sync: false
+      - key: FIREBASE_CLIENT_EMAIL
+        sync: false
+      - key: TICKET_CATEGORY_ID
+        sync: false
+      - key: MATCH_SUBMISSION_CHANNEL_ID
+        sync: false
+      - key: SUGGESTION_CHANNEL_ID
+        sync: false
+      - key: COMPLAINT_CHANNEL_ID
+        sync: false
+      - key: ADMIN_ROLE_ID
+        sync: false
+      - key: MOD_ROLE_ID
+        sync: false
+      - key: TOURNAMENT_MANAGER_ROLE_ID
+        sync: false
+      - key: PORT
+        value: 3000
+      - key: NODE_ENV
+        value: production
+    autoDeploy: true
+    healthCheckPath: /health
