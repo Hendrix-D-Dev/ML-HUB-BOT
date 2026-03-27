@@ -53,12 +53,12 @@ module.exports = {
             .setTitle('🎮 Match Result Submission')
             .setDescription(`Match ID: **${matchId}**`)
             .addFields(
-                { name: '🏆 Tournament', value: tournament, inline: true },
-                { name: '👤 Submitted By', value: interaction.user.tag, inline: true },
+                { name: 'Tournament', value: tournament, inline: true },
+                { name: 'Submitted By', value: interaction.user.tag, inline: true },
                 { name: '\u200B', value: '\u200B', inline: true },
-                { name: '🏆 Squad 1', value: `**${squad1Name}**\nScore: ${squad1Score}`, inline: true },
-                { name: '🏆 Squad 2', value: `**${squad2Name}**\nScore: ${squad2Score}`, inline: true },
-                { name: '👑 Winner', value: winner, inline: true }
+                { name: 'Squad 1', value: `**${squad1Name}**\nScore: ${squad1Score}`, inline: true },
+                { name: 'Squad 2', value: `**${squad2Name}**\nScore: ${squad2Score}`, inline: true },
+                { name: 'Winner', value: winner, inline: true }
             )
             .setTimestamp();
         
@@ -66,7 +66,7 @@ module.exports = {
         if (!submissionChannel) {
             logger.error('Match submission channel not found');
             return interaction.editReply({
-                content: '❌ Match submission channel not configured!'
+                content: '❌ Match submission channel not configured.'
             });
         }
         
@@ -92,6 +92,7 @@ module.exports = {
         
         await database.updateMatch(matchId, { messageId: message.id });
         
+        // Create private thread for screenshots
         const thread = await message.startThread({
             name: `📸 Screenshots for ${matchId}`,
             autoArchiveDuration: 60,
@@ -112,8 +113,9 @@ module.exports = {
             embeds: [threadEmbed]
         });
         
+        // Send reply with thread link
         await interaction.editReply({
-            content: `✅ Match result submitted successfully!\n**Match ID:** \`${matchId}\`\n**Match:** ${squad1Name} vs ${squad2Name}\n**Score:** ${squad1Score} - ${squad2Score}\n\n📸 Please upload your screenshots in the private thread.`
+            content: `✅ Match result submitted successfully!\n**Match ID:** \`${matchId}\`\n**Match:** ${squad1Name} vs ${squad2Name}\n**Score:** ${squad1Score} - ${squad2Score}\n\n📸 [Click here to upload your screenshots](${thread.url})`
         });
         
         logger.info(`Match submitted: ${matchId} by ${interaction.user.tag}`);
