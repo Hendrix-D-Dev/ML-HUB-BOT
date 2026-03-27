@@ -38,7 +38,7 @@ module.exports = {
                 .setDescription('Close one of your tickets')
                 .addStringOption(option =>
                     option.setName('ticket_id')
-                        .setDescription('Ticket ID to close')
+                        .setDescription('Ticket ID to close (use /ticket list to see your tickets)')
                         .setRequired(true))
                 .addStringOption(option =>
                     option.setName('reason')
@@ -87,8 +87,19 @@ module.exports = {
         // Check ticket limit
         const openTickets = await database.getUserOpenTickets(userId);
         if (openTickets.length >= config.ticketLimit) {
+            // Create an embed showing the user their open tickets
+            const embed = new EmbedBuilder()
+                .setColor(0xFF0000)
+                .setTitle('❌ Ticket Limit Reached')
+                .setDescription(`You already have ${openTickets.length} open tickets. Please close some before creating a new one.`)
+                .addFields(
+                    { name: '📋 Your Open Tickets', value: openTickets.map(t => `**${t.ticketId}** - ${t.type.toUpperCase()}: ${t.title}`).join('\n') || 'No open tickets', inline: false },
+                    { name: 'How to Close a Ticket', value: 'Use `/ticket close ticket_id:` followed by the ticket ID you want to close.\nExample: `/ticket close ticket_id: complaint-1234567890-1234`', inline: false }
+                )
+                .setTimestamp();
+            
             return interaction.reply({
-                content: `❌ You already have ${openTickets.length} open tickets. Please close some before creating a new one.`,
+                embeds: [embed],
                 flags: 64
             });
         }
@@ -110,8 +121,8 @@ module.exports = {
                 channelName = 'Suggestions';
                 break;
             case 'support':
-                targetChannelId = config.matchSubmissionChannelId;
-                channelName = 'Support';
+                targetChannelId = config.ticketCategoryId; // Use the ticket category channel for support
+                channelName = 'Tickets';
                 break;
         }
         
@@ -140,7 +151,7 @@ module.exports = {
         const targetChannel = interaction.guild.channels.cache.get(targetChannelId);
         if (targetChannel) {
             const embedColor = type === 'complaint' ? 0xFF0000 : (type === 'suggestion' ? 0x00FF00 : 0x0099FF);
-            const emoji = type === 'complaint' ? '⚠️' : (type === 'suggestion' ? '💡' : '🆘');
+            const emoji = type === 'complaint' ? '⚠️' : (type === 'suggestion' ? '💡' : '🎫');
             
             const embed = new EmbedBuilder()
                 .setColor(embedColor)
@@ -175,7 +186,7 @@ module.exports = {
             });
             
             await interaction.reply({
-                content: `✅ Your ${type} has been submitted to #${channelName.toLowerCase()}. Staff will review it shortly.\n**Ticket ID:** \`${ticketId}\``,
+                content: `✅ Your ${type} has been submitted to #${channelName.toLowerCase()}.\n**Ticket ID:** \`${ticketId}\`\n\nUse \`/ticket list\` to see your open tickets or \`/ticket close ticket_id:${ticketId}\` to close this ticket.`,
                 flags: 64
             });
         } else {
@@ -193,27 +204,33 @@ module.exports = {
         const tickets = await database.getUserOpenTickets(userId);
         
         if (tickets.length === 0) {
-            return interaction.reply({
-                content: '📭 You have no open tickets.',
-                flags: 64
-            });
+            const embed = new EmbedBuilder()
+                .setColor(0x00FF00)
+                .setTitle('📭 No Open Tickets')
+                .setDescription('You have no open tickets.')
+                .addFields(
+                    { name: 'Create a Ticket', value: 'Use `/ticket create` to create a new ticket.', inline: false }
+                )
+                .setTimestamp();
+            
+            return interaction.reply({ embeds: [embed], flags: 64 });
         }
         
         const embed = new EmbedBuilder()
             .setColor(0x0099FF)
             .setTitle('📋 Your Open Tickets')
-            .setDescription(`You have ${tickets.length} open ticket(s)`)
+            .setDescription(`You have ${tickets.length} open ticket(s) out of ${config.ticketLimit} maximum.`)
             .setTimestamp();
         
         tickets.forEach(ticket => {
             embed.addFields({
-                name: `${ticket.type.toUpperCase()}: ${ticket.title}`,
-                value: `**ID:** \`${ticket.ticketId}\`\n**Created:** ${new Date(ticket.createdAt).toLocaleString()}\n**Status:** ${ticket.status}`,
+                name: `🔖 ${ticket.type.toUpperCase()}: ${ticket.title}`,
+                value: `**ID:** \`${ticket.ticketId}\`\n**Created:** ${new Date(ticket.createdAt).toLocaleString()}\n**Status:** ${ticket.status}\n**To close:** \`/ticket close ticket_id:${ticket.ticketId}\``,
                 inline: false
             });
         });
         
-        embed.setFooter({ text: 'Use /ticket close <ticket_id> to close a ticket' });
+        embed.setFooter({ text: 'Use /ticket close with the ticket ID to close a ticket' });
         
         await interaction.reply({ embeds: [embed], flags: 64 });
     },
@@ -226,10 +243,17 @@ module.exports = {
         const ticket = await database.getTicket(ticketId);
         
         if (!ticket) {
-            return interaction.reply({
-                content: '❌ Ticket not found. Please check the ticket ID.',
-                flags: 64
-            });
+            // Suggest checking ticket list
+            const embed = new EmbedBuilder()
+                .setColor(0xFF0000)
+                .setTitle('❌ Ticket Not Found')
+                .setDescription(`Ticket ID **${ticketId}** was not found.`)
+                .addFields(
+                    { name: 'How to Find Your Tickets', value: 'Use `/ticket list` to see all your open tickets and their IDs.', inline: false }
+                )
+                .setTimestamp();
+            
+            return interaction.reply({ embeds: [embed], flags: 64 });
         }
         
         // Check if user owns the ticket or is admin/mod
@@ -238,7 +262,7 @@ module.exports = {
         
         if (ticket.userId !== userId && !isAdmin && !isMod) {
             return interaction.reply({
-                content: '❌ You can only close your own tickets!',
+                content: '❌ You can only close your own tickets! Use `/ticket list` to see your tickets.',
                 flags: 64
             });
         }
@@ -267,7 +291,7 @@ module.exports = {
                 targetChannelId = config.suggestionChannelId;
                 break;
             case 'support':
-                targetChannelId = config.matchSubmissionChannelId;
+                targetChannelId = config.ticketCategoryId; // Use the ticket category channel
                 break;
         }
         
@@ -307,7 +331,7 @@ module.exports = {
         }
         
         await interaction.reply({
-            content: `✅ Ticket **${ticketId}** has been closed.`,
+            content: `✅ Ticket **${ticketId}** has been closed.\n\nYou can now create new tickets if needed.`,
             flags: 64
         });
         
@@ -320,9 +344,9 @@ module.exports = {
             .setTitle('🎫 Ticket System')
             .setDescription('Need help? Click a button below to create a ticket:')
             .addFields(
-                { name: '📝 Complaint', value: 'Report inappropriate behavior, rule violations, or disputes', inline: true },
-                { name: '💡 Suggestion', value: 'Share your ideas to improve our community', inline: true },
-                { name: '🆘 Support', value: 'Get help with tournaments, matches, or general questions', inline: true }
+                { name: '📝 Complaint', value: 'Report inappropriate behavior, rule violations, or disputes\n*Posts to #complaints channel*', inline: true },
+                { name: '💡 Suggestion', value: 'Share your ideas to improve our community\n*Posts to #suggestions channel*', inline: true },
+                { name: '🆘 Support', value: 'Get help with tournaments, matches, or general questions\n*Posts to #tickets channel*', inline: true }
             )
             .setFooter({ text: 'Your ticket will be sent to the appropriate channel' });
         

@@ -15,6 +15,7 @@ module.exports = {
     
     // Channel & Role IDs
     ticketCategoryId: process.env.TICKET_CATEGORY_ID,
+    ticketChannelId: process.env.TICKET_CHANNEL_ID, // New channel for support tickets
     matchSubmissionChannelId: process.env.MATCH_SUBMISSION_CHANNEL_ID,
     suggestionChannelId: process.env.SUGGESTION_CHANNEL_ID,
     complaintChannelId: process.env.COMPLAINT_CHANNEL_ID,
