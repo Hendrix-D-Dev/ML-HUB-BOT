@@ -8,13 +8,25 @@ const colors = {
     debug: chalk.green
 };
 
+// Create logs directory if it doesn't exist
+const fs = require('fs');
+const logsDir = './logs';
+if (!fs.existsSync(logsDir)) {
+    fs.mkdirSync(logsDir);
+}
+
 const logger = winston.createLogger({
-    level: 'info',
+    level: process.env.NODE_ENV === 'production' ? 'info' : 'debug',
     format: winston.format.combine(
         winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
-        winston.format.printf(({ timestamp, level, message }) => {
+        winston.format.errors({ stack: true }),
+        winston.format.printf(({ timestamp, level, message, stack }) => {
             const color = colors[level] || chalk.white;
-            return `${chalk.gray(timestamp)} ${color(`[${level.toUpperCase()}]`)} ${message}`;
+            let output = `${chalk.gray(timestamp)} ${color(`[${level.toUpperCase()}]`)} ${message}`;
+            if (stack) {
+                output += `\n${chalk.red(stack)}`;
+            }
+            return output;
         })
     ),
     transports: [
@@ -23,5 +35,10 @@ const logger = winston.createLogger({
         new winston.transports.File({ filename: 'logs/combined.log' })
     ]
 });
+
+// Add method to log HTTP requests
+logger.http = (message) => {
+    logger.info(`🌐 ${message}`);
+};
 
 module.exports = logger;

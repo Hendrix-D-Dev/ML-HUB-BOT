@@ -3,21 +3,41 @@ const logger = require('../utils/logger');
 
 module.exports = {
     name: Events.InteractionCreate,
-    async execute(interaction) {
-        // Handle slash commands
+    async execute(interaction, client) {
+        // Log all interactions for debugging
+        logger.info(`📨 Interaction received: ${interaction.type} - ${interaction.commandName || interaction.customId || 'unknown'} from ${interaction.user.tag}`);
+        
+        // Handle slash commands with queue system
         if (interaction.isChatInputCommand()) {
-            const command = interaction.client.commands.get(interaction.commandName);
+            const command = client.commands.get(interaction.commandName);
             
             if (!command) {
-                logger.warn(`No command matching ${interaction.commandName} was found.`);
-                return;
+                logger.warn(`⚠️ No command matching ${interaction.commandName} was found.`);
+                return interaction.reply({ 
+                    content: '❌ Command not found!', 
+                    flags: 64 
+                });
             }
             
+            // Check if we're at capacity
+            if (client.activeCommands >= client.maxConcurrentCommands) {
+                logger.info(`⏳ Command queueing: ${interaction.commandName} by ${interaction.user.tag}`);
+                client.commandQueue.push({ interaction, command });
+                return interaction.reply({ 
+                    content: '⏳ Server is busy. Your command is queued and will be processed shortly...', 
+                    flags: 64 
+                });
+            }
+            
+            // Process command immediately
+            client.activeCommands++;
             try {
+                logger.info(`▶️ Executing command: ${interaction.commandName} by ${interaction.user.tag}`);
                 await command.execute(interaction);
-                logger.info(`Command executed: ${interaction.commandName} by ${interaction.user.tag}`);
+                logger.info(`✅ Command completed: ${interaction.commandName} by ${interaction.user.tag}`);
             } catch (error) {
-                logger.error(`Error executing ${interaction.commandName}: ${error.message}`);
+                logger.error(`❌ Error executing ${interaction.commandName}: ${error.message}`);
+                logger.error(error.stack);
                 
                 const errorEmbed = new EmbedBuilder()
                     .setColor(0xFF0000)
@@ -25,22 +45,27 @@ module.exports = {
                     .setDescription('There was an error executing this command!')
                     .setTimestamp();
                 
-                if (interaction.replied || interaction.deferred) {
-                    await interaction.followUp({ embeds: [errorEmbed], flags: 64 });
-                } else {
-                    await interaction.reply({ embeds: [errorEmbed], flags: 64 });
+                try {
+                    if (interaction.replied || interaction.deferred) {
+                        await interaction.followUp({ embeds: [errorEmbed], flags: 64 });
+                    } else {
+                        await interaction.reply({ embeds: [errorEmbed], flags: 64 });
+                    }
+                } catch (replyError) {
+                    logger.error(`Failed to send error response: ${replyError.message}`);
                 }
+            } finally {
+                client.activeCommands--;
+                client.processQueue();
             }
         }
         
         // Handle button interactions
         if (interaction.isButton()) {
-            // Check for exact match first
-            let buttonHandler = interaction.client.buttonHandlers?.get(interaction.customId);
+            let buttonHandler = client.buttonHandlers?.get(interaction.customId);
             
-            // If no exact match, check regex patterns
             if (!buttonHandler) {
-                for (const [pattern, handler] of interaction.client.buttonHandlers) {
+                for (const [pattern, handler] of client.buttonHandlers) {
                     if (pattern instanceof RegExp && pattern.test(interaction.customId)) {
                         buttonHandler = handler;
                         break;
@@ -50,10 +75,11 @@ module.exports = {
             
             if (buttonHandler) {
                 try {
+                    logger.info(`🔘 Handling button: ${interaction.customId} by ${interaction.user.tag}`);
                     await buttonHandler(interaction);
-                    logger.info(`Button handled: ${interaction.customId} by ${interaction.user.tag}`);
+                    logger.info(`✅ Button handled: ${interaction.customId}`);
                 } catch (error) {
-                    logger.error(`Error handling button ${interaction.customId}: ${error.message}`);
+                    logger.error(`❌ Error handling button ${interaction.customId}: ${error.message}`);
                     if (!interaction.replied) {
                         await interaction.reply({ 
                             content: 'There was an error processing this action!', 
@@ -62,18 +88,16 @@ module.exports = {
                     }
                 }
             } else {
-                logger.warn(`No handler found for button: ${interaction.customId}`);
+                logger.warn(`⚠️ No handler found for button: ${interaction.customId}`);
             }
         }
         
         // Handle modal submissions
         if (interaction.isModalSubmit()) {
-            // Check for exact match first
-            let modalHandler = interaction.client.modalHandlers?.get(interaction.customId);
+            let modalHandler = client.modalHandlers?.get(interaction.customId);
             
-            // If no exact match, check regex patterns
             if (!modalHandler) {
-                for (const [pattern, handler] of interaction.client.modalHandlers) {
+                for (const [pattern, handler] of client.modalHandlers) {
                     if (pattern instanceof RegExp && pattern.test(interaction.customId)) {
                         modalHandler = handler;
                         break;
@@ -83,10 +107,11 @@ module.exports = {
             
             if (modalHandler) {
                 try {
+                    logger.info(`📝 Handling modal: ${interaction.customId} by ${interaction.user.tag}`);
                     await modalHandler(interaction);
-                    logger.info(`Modal handled: ${interaction.customId} by ${interaction.user.tag}`);
+                    logger.info(`✅ Modal handled: ${interaction.customId}`);
                 } catch (error) {
-                    logger.error(`Error handling modal ${interaction.customId}: ${error.message}`);
+                    logger.error(`❌ Error handling modal ${interaction.customId}: ${error.message}`);
                     if (!interaction.replied) {
                         await interaction.reply({ 
                             content: 'There was an error submitting this form!', 
@@ -95,19 +120,19 @@ module.exports = {
                     }
                 }
             } else {
-                logger.warn(`No handler found for modal: ${interaction.customId}`);
+                logger.warn(`⚠️ No handler found for modal: ${interaction.customId}`);
             }
         }
         
-        // Handle autocomplete interactions (if needed)
+        // Handle autocomplete
         if (interaction.isAutocomplete()) {
-            const command = interaction.client.commands.get(interaction.commandName);
+            const command = client.commands.get(interaction.commandName);
             
             if (command && command.autocomplete) {
                 try {
                     await command.autocomplete(interaction);
                 } catch (error) {
-                    logger.error(`Error handling autocomplete ${interaction.commandName}: ${error.message}`);
+                    logger.error(`❌ Error handling autocomplete ${interaction.commandName}: ${error.message}`);
                 }
             }
         }
