@@ -1,4 +1,5 @@
 const express = require('express');
+const axios = require('axios');
 const logger = require('./utils/logger');
 
 const app = express();
@@ -58,27 +59,38 @@ const server = app.listen(PORT, () => {
 });
 
 // Self-ping function to keep the bot alive on Render free tier
-function selfPing() {
+async function selfPing() {
     const url = `http://localhost:${PORT}/ping`;
     
-    fetch(url)
-        .then(response => {
-            logger.info(`🔄 Self-ping successful: ${response.status}`);
-        })
-        .catch(error => {
-            logger.error(`❌ Self-ping failed: ${error.message}`);
-        });
+    try {
+        const response = await axios.get(url, { timeout: 5000 });
+        logger.info(`🔄 Self-ping successful at ${new Date().toISOString()} - Status: ${response.status}`);
+    } catch (error) {
+        logger.error(`❌ Self-ping failed: ${error.message}`);
+    }
 }
 
 // Ping every 10 minutes (Render free tier sleeps after 15 minutes of inactivity)
 const PING_INTERVAL = 10 * 60 * 1000; // 10 minutes
 
-// Start self-pinging
+// Start self-pinging only in production
 if (process.env.NODE_ENV === 'production') {
     logger.info('🔄 Starting self-ping system to prevent sleep...');
-    selfPing(); // Ping immediately on startup
-    setInterval(selfPing, PING_INTERVAL);
-    logger.info(`✅ Self-ping will run every ${PING_INTERVAL / 60000} minutes`);
+    logger.info(`⏰ Will ping every ${PING_INTERVAL / 60000} minutes`);
+    
+    // Ping immediately on startup
+    selfPing();
+    
+    // Set up interval
+    const intervalId = setInterval(selfPing, PING_INTERVAL);
+    
+    // Log that interval is running
+    logger.info(`✅ Self-ping interval started with ID: ${intervalId}`);
+    
+    // Optional: Log every hour that the ping system is alive
+    setInterval(() => {
+        logger.info('💓 Self-ping system is alive and running');
+    }, 60 * 60 * 1000);
 }
 
 // Graceful shutdown
@@ -86,6 +98,7 @@ process.on('SIGTERM', () => {
     logger.info('SIGTERM signal received: closing HTTP server');
     server.close(() => {
         logger.info('HTTP server closed');
+        process.exit(0);
     });
 });
 
@@ -93,6 +106,7 @@ process.on('SIGINT', () => {
     logger.info('SIGINT signal received: closing HTTP server');
     server.close(() => {
         logger.info('HTTP server closed');
+        process.exit(0);
     });
 });
 

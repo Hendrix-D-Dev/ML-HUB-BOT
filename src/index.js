@@ -5,6 +5,7 @@ const config = require('./config');
 const database = require('./utils/database');
 const cloudinary = require('./utils/cloudinary');
 const logger = require('./utils/logger');
+const keepAlive = require('./keepalive');
 
 // Import the ping server
 require('./server');
@@ -205,12 +206,18 @@ startBot();
 // Handle process termination
 process.on('SIGINT', async () => {
     logger.info('🛑 Shutting down...');
+    if (keepAlive && keepAlive.stop) {
+        keepAlive.stop();
+    }
     client.destroy();
     process.exit(0);
 });
 
 process.on('SIGTERM', async () => {
     logger.info('🛑 SIGTERM signal received: shutting down...');
+    if (keepAlive && keepAlive.stop) {
+        keepAlive.stop();
+    }
     client.destroy();
     process.exit(0);
 });
@@ -232,4 +239,11 @@ client.once('ready', () => {
     logger.info(`📊 Serving ${client.guilds.cache.size} guilds`);
     logger.info(`👥 Total users: ${client.users.cache.size}`);
     logger.info(`☁️ Cloudinary storage active with ${process.env.CLOUDINARY_CLOUD_NAME}`);
+    
+    // Start keep-alive service to prevent Render from sleeping
+    if (process.env.NODE_ENV === 'production') {
+        logger.info('🔄 Starting keep-alive service...');
+        keepAlive.start();
+        logger.info('✅ Keep-alive service active');
+    }
 });
