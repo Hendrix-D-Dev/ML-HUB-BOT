@@ -19,8 +19,7 @@ app.get('/', (req, res) => {
         uptime: process.uptime(),
         bot: 'ML HUB BOT is running',
         version: '1.0.0',
-        environment: process.env.NODE_ENV || 'development',
-        commands: process.commands ? Object.keys(process.commands) : 'loading...'
+        environment: process.env.NODE_ENV || 'development'
     });
 });
 
@@ -57,6 +56,30 @@ const server = app.listen(PORT, () => {
     logger.info(`📡 Health check available at: http://localhost:${PORT}/health`);
     logger.info(`📊 Status check available at: http://localhost:${PORT}/status`);
 });
+
+// Self-ping function to keep the bot alive on Render free tier
+function selfPing() {
+    const url = `http://localhost:${PORT}/ping`;
+    
+    fetch(url)
+        .then(response => {
+            logger.info(`🔄 Self-ping successful: ${response.status}`);
+        })
+        .catch(error => {
+            logger.error(`❌ Self-ping failed: ${error.message}`);
+        });
+}
+
+// Ping every 10 minutes (Render free tier sleeps after 15 minutes of inactivity)
+const PING_INTERVAL = 10 * 60 * 1000; // 10 minutes
+
+// Start self-pinging
+if (process.env.NODE_ENV === 'production') {
+    logger.info('🔄 Starting self-ping system to prevent sleep...');
+    selfPing(); // Ping immediately on startup
+    setInterval(selfPing, PING_INTERVAL);
+    logger.info(`✅ Self-ping will run every ${PING_INTERVAL / 60000} minutes`);
+}
 
 // Graceful shutdown
 process.on('SIGTERM', () => {
