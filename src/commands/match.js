@@ -1,5 +1,6 @@
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
 const database = require('../utils/database');
+const cloudinary = require('../utils/cloudinary');
 const config = require('../config');
 const logger = require('../utils/logger');
 
@@ -10,7 +11,7 @@ module.exports = {
         .addSubcommand(subcommand =>
             subcommand
                 .setName('submit')
-                .setDescription('Submit match results with screenshots'))
+                .setDescription('Submit a new match result with screenshots'))
         .addSubcommand(subcommand =>
             subcommand
                 .setName('verify')
@@ -68,28 +69,28 @@ module.exports = {
             .setCustomId('squad1_name')
             .setLabel('Squad 1 Name')
             .setStyle(TextInputStyle.Short)
-            .setPlaceholder('Enter the name of the first squad')
+            .setPlaceholder('Enter squad name')
             .setRequired(true);
         
         const squad2NameInput = new TextInputBuilder()
             .setCustomId('squad2_name')
             .setLabel('Squad 2 Name')
             .setStyle(TextInputStyle.Short)
-            .setPlaceholder('Enter the name of the second squad')
+            .setPlaceholder('Enter squad name')
             .setRequired(true);
         
         const squad1ScoreInput = new TextInputBuilder()
             .setCustomId('squad1_score')
             .setLabel('Squad 1 Score')
             .setStyle(TextInputStyle.Short)
-            .setPlaceholder('Enter the score for Squad 1')
+            .setPlaceholder('e.g., 2-0 or 3')
             .setRequired(true);
         
         const squad2ScoreInput = new TextInputBuilder()
             .setCustomId('squad2_score')
             .setLabel('Squad 2 Score')
             .setStyle(TextInputStyle.Short)
-            .setPlaceholder('Enter the score for Squad 2')
+            .setPlaceholder('e.g., 0-2 or 1')
             .setRequired(true);
         
         const tournamentInput = new TextInputBuilder()
@@ -138,17 +139,31 @@ module.exports = {
         });
         
         const submissionChannel = interaction.guild.channels.cache.get(config.matchSubmissionChannelId);
-        if (submissionChannel) {
-            const embed = new EmbedBuilder()
-                .setColor(0x00FF00)
-                .setTitle('✅ Match Verified')
-                .setDescription(`Match **${matchId}** has been verified`)
-                .addFields(
-                    { name: 'Winner', value: this.determineWinner(match.squad1.score, match.squad2.score, match.squad1.name, match.squad2.name), inline: true }
-                )
-                .setTimestamp();
-            
-            await submissionChannel.send({ embeds: [embed] });
+        if (submissionChannel && match.messageId) {
+            try {
+                const originalMessage = await submissionChannel.messages.fetch(match.messageId);
+                const originalEmbed = EmbedBuilder.from(originalMessage.embeds[0]);
+                originalEmbed.setColor(0x00FF00);
+                originalEmbed.addFields({ 
+                    name: 'Verified By', 
+                    value: interaction.user.tag, 
+                    inline: true 
+                });
+                
+                const row = new ActionRowBuilder()
+                    .addComponents(
+                        new ButtonBuilder()
+                            .setCustomId(`match_verified_${matchId}`)
+                            .setLabel('Verified')
+                            .setStyle(ButtonStyle.Success)
+                            .setEmoji('✅')
+                            .setDisabled(true)
+                    );
+                
+                await originalMessage.edit({ embeds: [originalEmbed], components: [row] });
+            } catch (error) {
+                logger.error(`Error updating match message: ${error.message}`);
+            }
         }
         
         await interaction.reply({
@@ -184,17 +199,30 @@ module.exports = {
         });
         
         const submissionChannel = interaction.guild.channels.cache.get(config.matchSubmissionChannelId);
-        if (submissionChannel) {
-            const embed = new EmbedBuilder()
-                .setColor(0xFF0000)
-                .setTitle('❌ Match Rejected')
-                .setDescription(`Match **${matchId}** has been rejected`)
-                .addFields(
-                    { name: 'Reason', value: reason, inline: true }
-                )
-                .setTimestamp();
-            
-            await submissionChannel.send({ embeds: [embed] });
+        if (submissionChannel && match.messageId) {
+            try {
+                const originalMessage = await submissionChannel.messages.fetch(match.messageId);
+                const originalEmbed = EmbedBuilder.from(originalMessage.embeds[0]);
+                originalEmbed.setColor(0xFF0000);
+                originalEmbed.addFields(
+                    { name: 'Rejected By', value: interaction.user.tag, inline: true },
+                    { name: 'Reason', value: reason, inline: false }
+                );
+                
+                const row = new ActionRowBuilder()
+                    .addComponents(
+                        new ButtonBuilder()
+                            .setCustomId(`match_rejected_${matchId}`)
+                            .setLabel('Rejected')
+                            .setStyle(ButtonStyle.Danger)
+                            .setEmoji('❌')
+                            .setDisabled(true)
+                    );
+                
+                await originalMessage.edit({ embeds: [originalEmbed], components: [row] });
+            } catch (error) {
+                logger.error(`Error updating match message: ${error.message}`);
+            }
         }
         
         await interaction.reply({
@@ -216,37 +244,39 @@ module.exports = {
             });
         }
         
-        const winner = this.determineWinner(match.squad1.score, match.squad2.score, match.squad1.name, match.squad2.name);
-        
-        const embed = new EmbedBuilder()
-            .setColor(0x0099FF)
-            .setTitle(`Match Details: ${matchId}`)
-            .addFields(
-                { name: 'Date', value: new Date(match.matchDate).toLocaleString(), inline: true },
-                { name: 'Tournament', value: match.tournament || 'Regular Match', inline: true },
-                { name: 'Status', value: match.status.toUpperCase(), inline: true },
-                { name: '\u200B', value: '\u200B', inline: false },
-                { name: 'Squad 1', value: `**${match.squad1.name}**\nScore: ${match.squad1.score}`, inline: true },
-                { name: 'Squad 2', value: `**${match.squad2.name}**\nScore: ${match.squad2.score}`, inline: true },
-                { name: 'Winner', value: winner, inline: true }
-            )
-            .setTimestamp();
-        
-        await interaction.reply({ embeds: [embed], flags: 64 });
-    },
-    
-    determineWinner(score1, score2, name1, name2) {
         const parseScore = (score) => {
             if (typeof score === 'number') return score;
             const parts = score.toString().split('-');
             return parseInt(parts[0]) || 0;
         };
         
-        const s1 = parseScore(score1);
-        const s2 = parseScore(score2);
+        const s1 = parseScore(match.squad1.score);
+        const s2 = parseScore(match.squad2.score);
+        let winner = null;
+        if (s1 > s2) winner = match.squad1.name;
+        else if (s2 > s1) winner = match.squad2.name;
+        else winner = 'Tie';
         
-        if (s1 > s2) return name1;
-        if (s2 > s1) return name2;
-        return 'Tie';
+        const embed = new EmbedBuilder()
+            .setColor(0x0099FF)
+            .setTitle(`Match: ${match.squad1.name} vs ${match.squad2.name}`)
+            .addFields(
+                { name: 'Match ID', value: matchId, inline: true },
+                { name: 'Date', value: new Date(match.matchDate).toLocaleString(), inline: true },
+                { name: 'Tournament', value: match.tournament || 'Regular Match', inline: true },
+                { name: 'Status', value: match.status.toUpperCase(), inline: true },
+                { name: '\u200B', value: '\u200B', inline: false },
+                { name: 'Score', value: `${match.squad1.score} - ${match.squad2.score}`, inline: true },
+                { name: 'Winner', value: winner, inline: true },
+                { name: 'Submitted By', value: match.submittedBy.username, inline: true }
+            )
+            .setTimestamp();
+        
+        if (match.screenshots && match.screenshots.length > 0) {
+            const screenshotLinks = match.screenshots.map((url, i) => `[Screenshot ${i + 1}](${url})`).join('\n');
+            embed.addFields({ name: '📸 Screenshots', value: screenshotLinks, inline: false });
+        }
+        
+        await interaction.reply({ embeds: [embed], flags: 64 });
     }
 };
