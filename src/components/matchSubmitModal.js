@@ -9,8 +9,7 @@ module.exports = {
     customId: 'match_submit_modal',
     
     async execute(interaction) {
-        // Defer reply to give time for processing
-        await interaction.deferReply({ flags: 64 });
+        await interaction.deferReply({ flags: 64 }); // Ephemeral reply
         
         const squad1Name = interaction.fields.getTextInputValue('squad1_name');
         const squad2Name = interaction.fields.getTextInputValue('squad2_name');
@@ -35,56 +34,60 @@ module.exports = {
         else if (s2 > s1) winner = squad2Name;
         else winner = 'Tie';
         
-        // Create match in database
-        const matchData = {
-            matchId,
-            squad1: { name: squad1Name, score: squad1Score },
-            squad2: { name: squad2Name, score: squad2Score },
-            winner,
-            screenshots: [],
-            submittedBy: {
-                userId: interaction.user.id,
-                username: interaction.user.username
-            },
+        // Store match data temporarily
+        interaction.client.pendingMatches = interaction.client.pendingMatches || {};
+        interaction.client.pendingMatches[matchId] = {
+            squad1Name,
+            squad2Name,
+            squad1Score,
+            squad2Score,
             tournament,
-            status: 'pending',
-            matchDate: new Date().toISOString()
+            winner,
+            userId: interaction.user.id,
+            userTag: interaction.user.tag,
+            screenshots: [],
+            status: 'pending'
         };
         
-        await database.createMatch(matchData);
-        
-        // Send a follow-up asking for screenshots
-        const screenshotEmbed = new EmbedBuilder()
+        // Create private screenshot upload panel (ephemeral)
+        const embed = new EmbedBuilder()
             .setColor(0x0099FF)
-            .setTitle('📸 Upload Match Screenshots')
-            .setDescription(`Please upload your match result screenshots for **${squad1Name} vs ${squad2Name}**\n\n**Match ID:** \`${matchId}\``)
+            .setTitle('📸 Match Screenshots')
+            .setDescription(`**Match:** ${squad1Name} vs ${squad2Name}\n**Match ID:** \`${matchId}\``)
             .addFields(
-                { name: 'Instructions', value: 'Upload your screenshots in the next 2 minutes. You can upload multiple images.\nAfter uploading, click **Done** to submit.', inline: false }
+                { name: 'Step 1', value: 'Upload your match result screenshots below', inline: false },
+                { name: 'Step 2', value: 'Click **Submit Match** when done', inline: false },
+                { name: 'Uploaded Screenshots', value: 'None yet', inline: false }
             )
+            .setFooter({ text: 'You have 5 minutes to upload screenshots' })
             .setTimestamp();
         
         const row = new ActionRowBuilder()
             .addComponents(
                 new ButtonBuilder()
-                    .setCustomId(`match_done_${matchId}`)
-                    .setLabel('✅ Done - Submit Match')
+                    .setCustomId(`match_submit_final_${matchId}`)
+                    .setLabel('✅ Submit Match')
                     .setStyle(ButtonStyle.Success)
                     .setEmoji('✅')
+                    .setDisabled(true), // Disabled until screenshots are added
+                new ButtonBuilder()
+                    .setCustomId(`match_cancel_${matchId}`)
+                    .setLabel('❌ Cancel')
+                    .setStyle(ButtonStyle.Danger)
+                    .setEmoji('❌')
             );
         
-        await interaction.followUp({
-            embeds: [screenshotEmbed],
-            components: [row],
-            flags: 64
+        await interaction.editReply({
+            embeds: [embed],
+            components: [row]
         });
         
-        // Create collector for screenshot uploads
+        // Set up a private message collector for screenshots (only visible to user)
         const filter = m => m.author.id === interaction.user.id && m.attachments.size > 0;
-        const collector = interaction.channel.createMessageCollector({ filter, time: 120000 }); // 2 minutes
-        
-        const uploadedUrls = [];
+        const collector = interaction.channel.createMessageCollector({ filter, time: 300000 }); // 5 minutes
         
         collector.on('collect', async (message) => {
+            // Process screenshots privately
             const tempUrls = [];
             message.attachments.forEach(attachment => {
                 if (attachment.contentType?.startsWith('image/')) {
@@ -94,33 +97,51 @@ module.exports = {
             
             if (tempUrls.length > 0) {
                 // Upload to Cloudinary
-                const urls = await cloudinary.uploadMultipleScreenshots(tempUrls, matchId);
-                uploadedUrls.push(...urls);
+                const uploadedUrls = await cloudinary.uploadMultipleScreenshots(tempUrls, matchId);
+                const pendingMatch = interaction.client.pendingMatches[matchId];
+                pendingMatch.screenshots.push(...uploadedUrls);
                 
-                await message.reply({
-                    content: `✅ ${urls.length} screenshot(s) uploaded. Total: ${uploadedUrls.length} screenshot(s).`,
-                    flags: 64
+                // Update the ephemeral message with new screenshot count
+                const updatedEmbed = EmbedBuilder.from(embed);
+                updatedEmbed.spliceFields(2, 1, {
+                    name: 'Uploaded Screenshots',
+                    value: `${pendingMatch.screenshots.length} screenshot(s) uploaded`,
+                    inline: false
                 });
                 
-                // Update the match with uploaded screenshots
-                await database.updateMatch(matchId, { screenshots: uploadedUrls });
+                const updatedRow = new ActionRowBuilder()
+                    .addComponents(
+                        new ButtonBuilder()
+                            .setCustomId(`match_submit_final_${matchId}`)
+                            .setLabel('✅ Submit Match')
+                            .setStyle(ButtonStyle.Success)
+                            .setEmoji('✅')
+                            .setDisabled(false), // Now enabled
+                        new ButtonBuilder()
+                            .setCustomId(`match_cancel_${matchId}`)
+                            .setLabel('❌ Cancel')
+                            .setStyle(ButtonStyle.Danger)
+                            .setEmoji('❌')
+                    );
+                
+                await interaction.editReply({
+                    embeds: [updatedEmbed],
+                    components: [updatedRow]
+                });
+                
+                // Send private confirmation (will be auto-deleted)
+                await message.reply({
+                    content: `✅ ${uploadedUrls.length} screenshot(s) added. Total: ${pendingMatch.screenshots.length}`,
+                    flags: 64
+                });
             }
             
-            await message.delete(); // Clean up
+            // Delete the user's message to keep chat clean
+            await message.delete();
         });
         
-        // Store collector and match info for the Done button
-        interaction.client.tempMatches = interaction.client.tempMatches || {};
-        interaction.client.tempMatches[matchId] = {
-            collector,
-            squad1Name,
-            squad2Name,
-            squad1Score,
-            squad2Score,
-            tournament,
-            winner,
-            uploadedUrls
-        };
+        // Store collector for cleanup
+        interaction.client.pendingMatches[matchId].collector = collector;
         
         logger.info(`Match submission started: ${matchId} by ${interaction.user.tag}`);
     }
