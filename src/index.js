@@ -6,6 +6,7 @@ const database = require('./utils/database');
 const cloudinary = require('./utils/cloudinary');
 const logger = require('./utils/logger');
 const keepAlive = require('./keepalive');
+const CronJobs = require('./cronJobs');
 
 // Import the ping server
 require('./server');
@@ -31,6 +32,9 @@ client.modalHandlers = new Collection();
 client.maxConcurrentCommands = 10;
 client.activeCommands = 0;
 client.commandQueue = [];
+
+// Initialize cron jobs
+const cronJobs = new CronJobs(client);
 
 // Process command queue
 client.processQueue = async () => {
@@ -209,6 +213,9 @@ process.on('SIGINT', async () => {
     if (keepAlive && keepAlive.stop) {
         keepAlive.stop();
     }
+    if (cronJobs && cronJobs.stop) {
+        cronJobs.stop();
+    }
     client.destroy();
     process.exit(0);
 });
@@ -217,6 +224,9 @@ process.on('SIGTERM', async () => {
     logger.info('🛑 SIGTERM signal received: shutting down...');
     if (keepAlive && keepAlive.stop) {
         keepAlive.stop();
+    }
+    if (cronJobs && cronJobs.stop) {
+        cronJobs.stop();
     }
     client.destroy();
     process.exit(0);
@@ -242,8 +252,12 @@ client.once('ready', () => {
     
     // Start keep-alive service to prevent Render from sleeping
     if (process.env.NODE_ENV === 'production') {
-        logger.info('🔄 Starting keep-alive service...');
+        logger.info('🔄 Starting enhanced keep-alive service...');
         keepAlive.start();
-        logger.info('✅ Keep-alive service active');
+        logger.info('✅ Enhanced keep-alive service active');
+        
+        logger.info('⏰ Starting cron jobs...');
+        cronJobs.start();
+        logger.info('✅ Cron jobs active');
     }
 });

@@ -5,6 +5,13 @@ const logger = require('./utils/logger');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Add keep-alive headers to all responses
+app.use((req, res, next) => {
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('Keep-Alive', 'timeout=5, max=1000');
+    next();
+});
+
 // Add request logging middleware
 app.use((req, res, next) => {
     logger.http(`${req.method} ${req.url} - ${req.ip}`);
@@ -51,46 +58,50 @@ app.get('/status', (req, res) => {
     });
 });
 
-// Start the server
+// Active connections counter
+let activeConnections = 0;
+app.use((req, res, next) => {
+    activeConnections++;
+    res.on('finish', () => activeConnections--);
+    next();
+});
+
+app.get('/connections', (req, res) => {
+    res.json({ activeConnections });
+});
+
+// Start the server with keep-alive options
 const server = app.listen(PORT, () => {
     logger.info(`🌐 Ping server running on port ${PORT}`);
     logger.info(`📡 Health check available at: http://localhost:${PORT}/health`);
     logger.info(`📊 Status check available at: http://localhost:${PORT}/status`);
+    logger.info(`🔌 Server configured with keep-alive`);
 });
 
-// Self-ping function to keep the bot alive on Render free tier
+// Increase server timeout to prevent disconnections
+server.keepAliveTimeout = 65000; // 65 seconds
+server.headersTimeout = 66000; // 66 seconds
+
+// Aggressive self-ping function
 async function selfPing() {
-    const url = `http://localhost:${PORT}/ping`;
+    const localUrl = `http://localhost:${PORT}/ping`;
     
     try {
-        const response = await axios.get(url, { timeout: 5000 });
-        logger.info(`🔄 Self-ping successful at ${new Date().toISOString()} - Status: ${response.status}`);
+        const response = await axios.get(localUrl, { timeout: 5000 });
+        logger.info(`🔄 Self-ping successful at ${new Date().toISOString()}`);
+        return true;
     } catch (error) {
         logger.error(`❌ Self-ping failed: ${error.message}`);
+        return false;
     }
 }
 
-// Ping every 10 minutes (Render free tier sleeps after 15 minutes of inactivity)
-const PING_INTERVAL = 10 * 60 * 1000; // 10 minutes
-
-// Start self-pinging only in production
+// Aggressive self-pinging (every 2 minutes instead of 10)
 if (process.env.NODE_ENV === 'production') {
-    logger.info('🔄 Starting self-ping system to prevent sleep...');
-    logger.info(`⏰ Will ping every ${PING_INTERVAL / 60000} minutes`);
-    
-    // Ping immediately on startup
-    selfPing();
-    
-    // Set up interval
-    const intervalId = setInterval(selfPing, PING_INTERVAL);
-    
-    // Log that interval is running
-    logger.info(`✅ Self-ping interval started with ID: ${intervalId}`);
-    
-    // Optional: Log every hour that the ping system is alive
-    setInterval(() => {
-        logger.info('💓 Self-ping system is alive and running');
-    }, 60 * 60 * 1000);
+    logger.info('🔄 Starting aggressive self-ping system...');
+    selfPing(); // Immediate ping
+    setInterval(selfPing, 2 * 60 * 1000); // Every 2 minutes
+    logger.info('✅ Aggressive self-ping active (every 2 minutes)');
 }
 
 // Graceful shutdown

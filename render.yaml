@@ -18,7 +18,15 @@ services:
         sync: false
       - key: FIREBASE_CLIENT_EMAIL
         sync: false
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false
       - key: TICKET_CATEGORY_ID
+        sync: false
+      - key: TICKET_CHANNEL_ID
         sync: false
       - key: MATCH_SUBMISSION_CHANNEL_ID
         sync: false
@@ -36,5 +44,9 @@ services:
         value: 3000
       - key: NODE_ENV
         value: production
+      - key: RENDER_SERVICE_NAME
+        value: ml-hub-bot
     autoDeploy: true
     healthCheckPath: /health
+    healthCheckTimeout: 100
+    numReplicas: 1
