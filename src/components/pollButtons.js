@@ -2,6 +2,7 @@
  * Poll Button Handlers
  * Handles vote buttons for livestream polls
  */
+const { EmbedBuilder } = require('discord.js');
 const logger = require('../utils/logger');
 
 module.exports = [
@@ -15,6 +16,15 @@ module.exports = [
             if (!notificationService) {
                 return interaction.reply({
                     content: '❌ Poll system is not available.',
+                    flags: 64
+                });
+            }
+
+            // Check if poll exists
+            const poll = notificationService.client.activePolls?.[videoId];
+            if (!poll) {
+                return interaction.reply({
+                    content: '❌ This poll has expired or no longer exists. A new livestream will create a new poll.',
                     flags: 64
                 });
             }
@@ -36,6 +46,14 @@ module.exports = [
                 });
             }
 
+            const poll = notificationService.client.activePolls?.[videoId];
+            if (!poll) {
+                return interaction.reply({
+                    content: '❌ This poll has expired or no longer exists. A new livestream will create a new poll.',
+                    flags: 64
+                });
+            }
+
             await notificationService.handlePollVote(interaction, videoId, 'squad2');
         }
     },
@@ -49,6 +67,14 @@ module.exports = [
             if (!notificationService) {
                 return interaction.reply({
                     content: '❌ Poll system is not available.',
+                    flags: 64
+                });
+            }
+
+            const poll = notificationService.client.activePolls?.[videoId];
+            if (!poll) {
+                return interaction.reply({
+                    content: '❌ This poll has expired or no longer exists. A new livestream will create a new poll.',
                     flags: 64
                 });
             }
@@ -70,6 +96,14 @@ module.exports = [
                 });
             }
 
+            const poll = notificationService.client.activePolls?.[videoId];
+            if (!poll) {
+                return interaction.reply({
+                    content: '❌ No active poll found for this livestream.',
+                    flags: 64
+                });
+            }
+
             const results = notificationService.getPollResults(videoId);
             
             if (!results) {
@@ -79,16 +113,16 @@ module.exports = [
                 });
             }
 
-            const { EmbedBuilder } = require('discord.js');
             const embed = new EmbedBuilder()
                 .setColor(0x0099FF)
                 .setTitle('📊 Poll Results')
                 .setDescription(results.formatted)
                 .addFields(
                     { name: 'Total Votes', value: results.totalVotes.toString(), inline: true },
-                    { name: 'Leading', value: results.totalVotes > 0 ? this.getLeading(results) : 'No votes yet', inline: true }
+                    { name: 'Leading', value: results.totalVotes > 0 ? getLeading(results) : 'No votes yet', inline: true }
                 )
-                .setTimestamp();
+                .setTimestamp()
+                .setFooter({ text: `Poll for: ${poll.streamTitle || 'Livestream'}` });
 
             await interaction.reply({
                 embeds: [embed],

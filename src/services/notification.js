@@ -8,6 +8,10 @@ const logger = require('../utils/logger');
 class NotificationService {
     constructor(client) {
         this.client = client;
+        // Initialize active polls if not already
+        if (!this.client.activePolls) {
+            this.client.activePolls = {};
+        }
     }
 
     /**
@@ -86,7 +90,6 @@ class NotificationService {
             });
 
             // Store poll data for this stream
-            this.client.activePolls = this.client.activePolls || {};
             this.client.activePolls[streamData.videoId] = {
                 messageId: message.id,
                 channelId: channelId,
@@ -96,10 +99,12 @@ class NotificationService {
                 squad2Votes: 0,
                 tieVotes: 0,
                 voters: new Set(),
-                startedAt: Date.now()
+                startedAt: Date.now(),
+                videoId: streamData.videoId
             };
 
             logger.info(`📢 Livestream notification with poll sent: "${streamData.title}"`);
+            logger.info(`📊 Poll created with ID: ${streamData.videoId}`);
             return { success: true, messageId: message.id };
 
         } catch (error) {
@@ -175,45 +180,63 @@ class NotificationService {
     async updatePollMessage(videoId) {
         try {
             const poll = this.client.activePolls?.[videoId];
-            if (!poll) return;
+            if (!poll) {
+                logger.warn(`⚠️ Poll ${videoId} not found for update`);
+                return;
+            }
 
             const channel = await this.client.channels.fetch(poll.channelId);
-            if (!channel) return;
+            if (!channel) {
+                logger.error(`❌ Channel ${poll.channelId} not found`);
+                return;
+            }
 
             const message = await channel.messages.fetch(poll.messageId);
-            if (!message) return;
+            if (!message) {
+                logger.error(`❌ Message ${poll.messageId} not found`);
+                return;
+            }
 
             const totalVotes = poll.squad1Votes + poll.squad2Votes + poll.tieVotes;
 
             // Create updated embed with vote counts
             const embed = EmbedBuilder.from(message.embeds[0]);
             
-            // Update or add vote fields
-            const voteField = embed.data.fields?.find(f => f.name === '📊 Current Votes');
-            if (voteField) {
-                voteField.value = this.formatVoteResults(poll);
-            } else {
-                embed.addFields({ 
-                    name: '📊 Current Votes', 
-                    value: this.formatVoteResults(poll),
-                    inline: false 
-                });
-            }
+            // Remove existing vote fields
+            const fields = embed.data.fields || [];
+            const filteredFields = fields.filter(f => 
+                f.name !== '📊 Current Votes' && 
+                f.name !== '👥 Total Votes' &&
+                f.name !== '📊 Vote Results'
+            );
+            embed.data.fields = filteredFields;
 
-            // Add total votes field
-            const totalField = embed.data.fields?.find(f => f.name === '👥 Total Votes');
-            if (totalField) {
-                totalField.value = totalVotes.toString();
-            } else {
+            // Add updated vote results
+            embed.addFields({ 
+                name: '📊 Vote Results', 
+                value: this.formatVoteResults(poll),
+                inline: false 
+            });
+
+            embed.addFields({ 
+                name: '👥 Total Votes', 
+                value: totalVotes.toString(),
+                inline: true 
+            });
+
+            // Add leading indicator
+            if (totalVotes > 0) {
+                const leading = this.getLeading(poll);
                 embed.addFields({ 
-                    name: '👥 Total Votes', 
-                    value: totalVotes.toString(),
+                    name: '🏆 Currently Leading', 
+                    value: leading,
                     inline: true 
                 });
             }
 
             // Update the message
             await message.edit({ embeds: [embed] });
+            logger.info(`📊 Poll updated: ${videoId} - ${totalVotes} total votes`);
 
         } catch (error) {
             logger.error(`❌ Error updating poll message: ${error.message}`);
@@ -244,6 +267,19 @@ class NotificationService {
         return `🏆 **Squad 1:** ${'🟦'.repeat(squad1Bars)}${'⬜'.repeat(barLength - squad1Bars)} ${poll.squad1Votes} votes (${squad1Pct}%)\n` +
                `🏆 **Squad 2:** ${'🟥'.repeat(squad2Bars)}${'⬜'.repeat(barLength - squad2Bars)} ${poll.squad2Votes} votes (${squad2Pct}%)\n` +
                `🤝 **Tie:**      ${'🟨'.repeat(tieBars)}${'⬜'.repeat(barLength - tieBars)} ${poll.tieVotes} votes (${tiePct}%)`;
+    }
+
+    /**
+     * Get the currently leading option
+     * @param {Object} poll - Poll data
+     * @returns {string} - Leading option
+     */
+    getLeading(poll) {
+        const maxVotes = Math.max(poll.squad1Votes, poll.squad2Votes, poll.tieVotes);
+        if (maxVotes === 0) return 'No votes yet';
+        if (poll.squad1Votes === maxVotes) return '🏆 Squad 1';
+        if (poll.squad2Votes === maxVotes) return '🏆 Squad 2';
+        return '🤝 Tie';
     }
 
     /**
