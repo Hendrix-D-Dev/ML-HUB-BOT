@@ -7,6 +7,7 @@ const cloudinary = require('./utils/cloudinary');
 const logger = require('./utils/logger');
 const keepAlive = require('./keepalive');
 const CronJobs = require('./cronJobs');
+const LivestreamManager = require('./services/livestreamManager');
 
 // Import the ping server
 require('./server');
@@ -33,8 +34,10 @@ client.maxConcurrentCommands = 10;
 client.activeCommands = 0;
 client.commandQueue = [];
 
-// Initialize cron jobs
+// Initialize services
 const cronJobs = new CronJobs(client);
+const livestreamManager = new LivestreamManager(client, config);
+client.livestreamManager = livestreamManager; // Make available to commands
 
 // Process command queue
 client.processQueue = async () => {
@@ -216,6 +219,9 @@ process.on('SIGINT', async () => {
     if (cronJobs && cronJobs.stop) {
         cronJobs.stop();
     }
+    if (livestreamManager && livestreamManager.stop) {
+        livestreamManager.stop();
+    }
     client.destroy();
     process.exit(0);
 });
@@ -227,6 +233,9 @@ process.on('SIGTERM', async () => {
     }
     if (cronJobs && cronJobs.stop) {
         cronJobs.stop();
+    }
+    if (livestreamManager && livestreamManager.stop) {
+        livestreamManager.stop();
     }
     client.destroy();
     process.exit(0);
@@ -250,14 +259,27 @@ client.once('ready', () => {
     logger.info(`👥 Total users: ${client.users.cache.size}`);
     logger.info(`☁️ Cloudinary storage active with ${process.env.CLOUDINARY_CLOUD_NAME}`);
     
-    // Start keep-alive service to prevent Render from sleeping
+    // Start all services in production
     if (process.env.NODE_ENV === 'production') {
+        // Start keep-alive service
         logger.info('🔄 Starting enhanced keep-alive service...');
         keepAlive.start();
         logger.info('✅ Enhanced keep-alive service active');
         
+        // Start cron jobs
         logger.info('⏰ Starting cron jobs...');
         cronJobs.start();
         logger.info('✅ Cron jobs active');
+        
+        // Start YouTube Livestream Manager
+        logger.info('📺 Starting YouTube Livestream Manager...');
+        const started = livestreamManager.start();
+        if (started) {
+            logger.info('✅ YouTube Livestream Manager active');
+        } else {
+            logger.warn('⚠️ YouTube Livestream Manager failed to start - check configuration');
+        }
+    } else {
+        logger.info('ℹ️ Services not started in development mode');
     }
 });

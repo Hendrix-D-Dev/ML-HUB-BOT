@@ -22,11 +22,61 @@ module.exports = {
         .addSubcommand(subcommand =>
             subcommand
                 .setName('setup')
-                .setDescription('Setup bot configuration')),
+                .setDescription('Setup bot configuration'))
+        .addSubcommandGroup(group =>
+            group
+                .setName('livestream')
+                .setDescription('Manage YouTube livestream notifications')
+                .addSubcommand(subcommand =>
+                    subcommand
+                        .setName('status')
+                        .setDescription('Check livestream monitoring status'))
+                .addSubcommand(subcommand =>
+                    subcommand
+                        .setName('test')
+                        .setDescription('Send a test notification'))
+                .addSubcommand(subcommand =>
+                    subcommand
+                        .setName('reset')
+                        .setDescription('Reset the livestream state'))
+                .addSubcommand(subcommand =>
+                    subcommand
+                        .setName('force')
+                        .setDescription('Force a livestream check'))),
     
     async execute(interaction) {
+        const subcommandGroup = interaction.options.getSubcommandGroup();
         const subcommand = interaction.options.getSubcommand();
         
+        // Handle livestream subcommands
+        if (subcommandGroup === 'livestream') {
+            const livestreamManager = interaction.client.livestreamManager;
+            
+            if (!livestreamManager) {
+                return interaction.reply({
+                    content: '❌ Livestream manager is not initialized.',
+                    flags: 64
+                });
+            }
+            
+            switch (subcommand) {
+                case 'status':
+                    await this.livestreamStatus(interaction, livestreamManager);
+                    break;
+                case 'test':
+                    await this.livestreamTest(interaction, livestreamManager);
+                    break;
+                case 'reset':
+                    await this.livestreamReset(interaction, livestreamManager);
+                    break;
+                case 'force':
+                    await this.livestreamForce(interaction, livestreamManager);
+                    break;
+            }
+            return;
+        }
+        
+        // Handle regular subcommands
         switch (subcommand) {
             case 'stats':
                 await this.showStats(interaction);
@@ -97,15 +147,68 @@ module.exports = {
             .setTitle('⚙️ ML HUB BOT Setup Guide')
             .setDescription('Follow these steps to complete the bot setup:')
             .addFields(
-                { name: '1. Create Channels', value: 'Create the following channels:\n• #complaints\n• #suggestions\n• #match-submissions' },
-                { name: '2. Set Roles', value: 'Create and assign the following roles:\n• Admin\n• Moderator\n• Tournament Manager' },
-                { name: '3. Configure .env', value: 'Add the channel and role IDs to your .env file:\n```\nCOMPLAINT_CHANNEL_ID=...\nSUGGESTION_CHANNEL_ID=...\nMATCH_SUBMISSION_CHANNEL_ID=...\nADMIN_ROLE_ID=...\nMOD_ROLE_ID=...\nTOURNAMENT_MANAGER_ROLE_ID=...\n```' },
-                { name: '4. Create Ticket Panel', value: 'Use `/ticket panel` to create the ticket system panel in your desired channel' },
-                { name: '5. Test Commands', value: 'Test the following commands:\n• `/cointoss`\n• `/match submit`\n• `/ticket create`' }
+                { name: '1. Create Channels', value: 'Create the following channels:\n• #complaints\n• #suggestions\n• #match-submissions\n• #youtube-notifications (for livestream alerts)', inline: false },
+                { name: '2. Set Roles', value: 'Create and assign the following roles:\n• Admin\n• Moderator\n• Tournament Manager', inline: false },
+                { name: '3. Configure .env', value: 'Add the channel and role IDs to your .env file:\n```\nCOMPLAINT_CHANNEL_ID=...\nSUGGESTION_CHANNEL_ID=...\nMATCH_SUBMISSION_CHANNEL_ID=...\nADMIN_ROLE_ID=...\nMOD_ROLE_ID=...\nTOURNAMENT_MANAGER_ROLE_ID=...\nYOUTUBE_API_KEY=...\nYOUTUBE_CHANNEL_ID=...\nYOUTUBE_NOTIFICATION_CHANNEL_ID=...\n```', inline: false },
+                { name: '4. Create Ticket Panel', value: 'Use `/ticket panel` to create the ticket system panel in your desired channel', inline: false },
+                { name: '5. Test Commands', value: 'Test the following commands:\n• `/cointoss`\n• `/match submit`\n• `/ticket create`\n• `/admin livestream test`', inline: false }
             )
             .setFooter({ text: 'After setup, restart the bot for changes to take effect' })
             .setTimestamp();
         
         await interaction.reply({ embeds: [embed], flags: 64 });
+    },
+    
+    // Livestream Management Methods
+    async livestreamStatus(interaction, manager) {
+        const stats = manager.getStats();
+        
+        const embed = new EmbedBuilder()
+            .setColor(0x0099FF)
+            .setTitle('📺 YouTube Livestream Status')
+            .addFields(
+                { name: 'Status', value: stats.isRunning ? '🟢 Active' : '🔴 Inactive', inline: true },
+                { name: 'Total Checks', value: stats.totalChecks.toString(), inline: true },
+                { name: 'Successful Checks', value: stats.successfulChecks.toString(), inline: true },
+                { name: 'Notifications Sent', value: stats.notificationsSent.toString(), inline: true },
+                { name: 'Last Check', value: stats.lastCheckTime || 'Never', inline: true },
+                { name: 'Last Stream ID', value: stats.lastLiveStreamId || 'None', inline: true },
+                { name: 'Current Status', value: stats.currentStatus.isLive ? '🔴 Live' : '⚪ Not Live', inline: true }
+            )
+            .setTimestamp();
+        
+        if (stats.currentStatus.currentStreamData) {
+            embed.addFields({ 
+                name: 'Current Stream', 
+                value: stats.currentStatus.currentStreamData.title, 
+                inline: false 
+            });
+        }
+        
+        await interaction.reply({ embeds: [embed], flags: 64 });
+    },
+    
+    async livestreamTest(interaction, manager) {
+        await interaction.deferReply({ flags: 64 });
+        const success = await manager.sendTestNotification();
+        await interaction.editReply({
+            content: success ? '✅ Test notification sent successfully!' : '❌ Failed to send test notification.'
+        });
+    },
+    
+    async livestreamReset(interaction, manager) {
+        await interaction.deferReply({ flags: 64 });
+        manager.resetState();
+        await interaction.editReply({
+            content: '🔄 Livestream state has been reset. The next livestream will trigger a notification.'
+        });
+    },
+    
+    async livestreamForce(interaction, manager) {
+        await interaction.deferReply({ flags: 64 });
+        const status = await manager.forceCheck();
+        await interaction.editReply({
+            content: `✅ Forced check complete.\n**Live:** ${status.isLive ? 'Yes 🔴' : 'No ⚪'}\n**Last Stream ID:** ${status.lastLiveStreamId || 'None'}`
+        });
     }
 };

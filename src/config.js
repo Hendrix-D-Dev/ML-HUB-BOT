@@ -13,9 +13,24 @@ module.exports = {
         clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
     },
     
+    // Cloudinary Config
+    cloudinary: {
+        cloudName: process.env.CLOUDINARY_CLOUD_NAME,
+        apiKey: process.env.CLOUDINARY_API_KEY,
+        apiSecret: process.env.CLOUDINARY_API_SECRET,
+    },
+    
+    // YouTube Config - NEW
+    youtube: {
+        apiKey: process.env.YOUTUBE_API_KEY,
+        channelId: process.env.YOUTUBE_CHANNEL_ID || 'UCSes7FNZXTPciWYxtwFY1BQ',
+        notificationChannelId: process.env.YOUTUBE_NOTIFICATION_CHANNEL_ID,
+        checkInterval: parseInt(process.env.YOUTUBE_CHECK_INTERVAL) || 180000, // 3 minutes default
+    },
+    
     // Channel & Role IDs
     ticketCategoryId: process.env.TICKET_CATEGORY_ID,
-    ticketChannelId: process.env.TICKET_CHANNEL_ID, // New channel for support tickets
+    ticketChannelId: process.env.TICKET_CHANNEL_ID,
     matchSubmissionChannelId: process.env.MATCH_SUBMISSION_CHANNEL_ID,
     suggestionChannelId: process.env.SUGGESTION_CHANNEL_ID,
     complaintChannelId: process.env.COMPLAINT_CHANNEL_ID,
