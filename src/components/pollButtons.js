@@ -3,6 +3,7 @@
  * Handles vote buttons for livestream polls
  */
 const { EmbedBuilder } = require('discord.js');
+const featureManager = require('../services/featureManager');
 const logger = require('../utils/logger');
 
 module.exports = [
@@ -10,6 +11,14 @@ module.exports = [
         type: 'button',
         customId: /^poll_squad1_.+$/,
         async execute(interaction) {
+            // Check if polls feature is enabled
+            if (!featureManager.isEnabled('polls')) {
+                return interaction.reply({
+                    content: '❌ Polls are currently disabled. Try again later.',
+                    flags: 64
+                });
+            }
+
             const videoId = interaction.customId.replace('poll_squad1_', '');
             const notificationService = interaction.client.notificationService;
             
@@ -20,7 +29,6 @@ module.exports = [
                 });
             }
 
-            // Check if poll exists
             const poll = notificationService.client.activePolls?.[videoId];
             if (!poll) {
                 return interaction.reply({
@@ -36,6 +44,13 @@ module.exports = [
         type: 'button',
         customId: /^poll_squad2_.+$/,
         async execute(interaction) {
+            if (!featureManager.isEnabled('polls')) {
+                return interaction.reply({
+                    content: '❌ Polls are currently disabled. Try again later.',
+                    flags: 64
+                });
+            }
+
             const videoId = interaction.customId.replace('poll_squad2_', '');
             const notificationService = interaction.client.notificationService;
             
@@ -61,6 +76,13 @@ module.exports = [
         type: 'button',
         customId: /^poll_tie_.+$/,
         async execute(interaction) {
+            if (!featureManager.isEnabled('polls')) {
+                return interaction.reply({
+                    content: '❌ Polls are currently disabled. Try again later.',
+                    flags: 64
+                });
+            }
+
             const videoId = interaction.customId.replace('poll_tie_', '');
             const notificationService = interaction.client.notificationService;
             
@@ -86,6 +108,13 @@ module.exports = [
         type: 'button',
         customId: /^poll_view_.+$/,
         async execute(interaction) {
+            if (!featureManager.isEnabled('polls')) {
+                return interaction.reply({
+                    content: '❌ Polls are currently disabled. Try again later.',
+                    flags: 64
+                });
+            }
+
             const videoId = interaction.customId.replace('poll_view_', '');
             const notificationService = interaction.client.notificationService;
             

@@ -1,5 +1,6 @@
-const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits, ActionRowBuilder, StringSelectMenuBuilder } = require('discord.js');
 const database = require('../utils/database');
+const featureManager = require('../services/featureManager');
 const logger = require('../utils/logger');
 
 module.exports = {
@@ -42,7 +43,67 @@ module.exports = {
                 .addSubcommand(subcommand =>
                     subcommand
                         .setName('force')
-                        .setDescription('Force a livestream check'))),
+                        .setDescription('Force a livestream check')))
+        .addSubcommandGroup(group =>
+            group
+                .setName('features')
+                .setDescription('Manage bot features')
+                .addSubcommand(subcommand =>
+                    subcommand
+                        .setName('list')
+                        .setDescription('List all features and their status'))
+                .addSubcommand(subcommand =>
+                    subcommand
+                        .setName('toggle')
+                        .setDescription('Toggle a feature on/off')
+                        .addStringOption(option =>
+                            option.setName('feature')
+                                .setDescription('Feature to toggle')
+                                .setRequired(true)
+                                .addChoices(
+                                    { name: 'Polls', value: 'polls' },
+                                    { name: 'Match Submissions', value: 'matchSubmissions' },
+                                    { name: 'Tickets', value: 'tickets' },
+                                    { name: 'Coin Toss', value: 'coinToss' },
+                                    { name: 'Livestream Notifications', value: 'livestreamNotifications' },
+                                    { name: 'Admin Commands', value: 'adminCommands' }
+                                )))
+                .addSubcommand(subcommand =>
+                    subcommand
+                        .setName('enable')
+                        .setDescription('Enable a feature')
+                        .addStringOption(option =>
+                            option.setName('feature')
+                                .setDescription('Feature to enable')
+                                .setRequired(true)
+                                .addChoices(
+                                    { name: 'Polls', value: 'polls' },
+                                    { name: 'Match Submissions', value: 'matchSubmissions' },
+                                    { name: 'Tickets', value: 'tickets' },
+                                    { name: 'Coin Toss', value: 'coinToss' },
+                                    { name: 'Livestream Notifications', value: 'livestreamNotifications' },
+                                    { name: 'Admin Commands', value: 'adminCommands' }
+                                )))
+                .addSubcommand(subcommand =>
+                    subcommand
+                        .setName('disable')
+                        .setDescription('Disable a feature')
+                        .addStringOption(option =>
+                            option.setName('feature')
+                                .setDescription('Feature to disable')
+                                .setRequired(true)
+                                .addChoices(
+                                    { name: 'Polls', value: 'polls' },
+                                    { name: 'Match Submissions', value: 'matchSubmissions' },
+                                    { name: 'Tickets', value: 'tickets' },
+                                    { name: 'Coin Toss', value: 'coinToss' },
+                                    { name: 'Livestream Notifications', value: 'livestreamNotifications' },
+                                    { name: 'Admin Commands', value: 'adminCommands' }
+                                )))
+                .addSubcommand(subcommand =>
+                    subcommand
+                        .setName('reset')
+                        .setDescription('Reset all features to enabled'))),
     
     async execute(interaction) {
         const subcommandGroup = interaction.options.getSubcommandGroup();
@@ -71,6 +132,28 @@ module.exports = {
                     break;
                 case 'force':
                     await this.livestreamForce(interaction, livestreamManager);
+                    break;
+            }
+            return;
+        }
+        
+        // Handle features subcommands
+        if (subcommandGroup === 'features') {
+            switch (subcommand) {
+                case 'list':
+                    await this.featuresList(interaction);
+                    break;
+                case 'toggle':
+                    await this.featuresToggle(interaction);
+                    break;
+                case 'enable':
+                    await this.featuresEnable(interaction);
+                    break;
+                case 'disable':
+                    await this.featuresDisable(interaction);
+                    break;
+                case 'reset':
+                    await this.featuresReset(interaction);
                     break;
             }
             return;
@@ -151,12 +234,99 @@ module.exports = {
                 { name: '2. Set Roles', value: 'Create and assign the following roles:\n• Admin\n• Moderator\n• Tournament Manager', inline: false },
                 { name: '3. Configure .env', value: 'Add the channel and role IDs to your .env file:\n```\nCOMPLAINT_CHANNEL_ID=...\nSUGGESTION_CHANNEL_ID=...\nMATCH_SUBMISSION_CHANNEL_ID=...\nADMIN_ROLE_ID=...\nMOD_ROLE_ID=...\nTOURNAMENT_MANAGER_ROLE_ID=...\nYOUTUBE_API_KEY=...\nYOUTUBE_CHANNEL_ID=...\nYOUTUBE_NOTIFICATION_CHANNEL_ID=...\n```', inline: false },
                 { name: '4. Create Ticket Panel', value: 'Use `/ticket panel` to create the ticket system panel in your desired channel', inline: false },
-                { name: '5. Test Commands', value: 'Test the following commands:\n• `/cointoss`\n• `/match submit`\n• `/ticket create`\n• `/admin livestream test`', inline: false }
+                { name: '5. Test Commands', value: 'Test the following commands:\n• `/cointoss`\n• `/match submit`\n• `/ticket create`\n• `/admin livestream test`\n• `/admin features list`', inline: false }
             )
             .setFooter({ text: 'After setup, restart the bot for changes to take effect' })
             .setTimestamp();
         
         await interaction.reply({ embeds: [embed], flags: 64 });
+    },
+    
+    // Feature Management Methods
+    async featuresList(interaction) {
+        const features = featureManager.getAllFeatures();
+        const grouped = featureManager.getFeaturesGrouped();
+        
+        const embed = new EmbedBuilder()
+            .setColor(0x0099FF)
+            .setTitle('⚙️ Bot Feature Management')
+            .setDescription('Here are all bot features and their current status:')
+            .setTimestamp();
+        
+        // Add enabled features
+        if (grouped.enabled.length > 0) {
+            const enabledList = grouped.enabled.map(f => 
+                `✅ **${f.name}** - ${f.description}`
+            ).join('\n');
+            embed.addFields({ name: '🟢 Enabled Features', value: enabledList, inline: false });
+        }
+        
+        // Add disabled features
+        if (grouped.disabled.length > 0) {
+            const disabledList = grouped.disabled.map(f => 
+                `❌ **${f.name}** - ${f.description}`
+            ).join('\n');
+            embed.addFields({ name: '🔴 Disabled Features', value: disabledList, inline: false });
+        }
+        
+        embed.setFooter({ text: 'Use /admin features toggle <feature> to change status' });
+        
+        await interaction.reply({ embeds: [embed], flags: 64 });
+    },
+    
+    async featuresToggle(interaction) {
+        const feature = interaction.options.getString('feature');
+        const newState = featureManager.toggle(feature);
+        
+        const embed = new EmbedBuilder()
+            .setColor(newState ? 0x00FF00 : 0xFF0000)
+            .setTitle(`${newState ? '✅' : '❌'} Feature Toggled`)
+            .setDescription(`**${feature}** is now ${newState ? 'enabled' : 'disabled'}`)
+            .setTimestamp();
+        
+        await interaction.reply({ embeds: [embed], flags: 64 });
+        logger.info(`Feature toggled via admin command: ${feature} -> ${newState}`);
+    },
+    
+    async featuresEnable(interaction) {
+        const feature = interaction.options.getString('feature');
+        featureManager.enable(feature);
+        
+        const embed = new EmbedBuilder()
+            .setColor(0x00FF00)
+            .setTitle('✅ Feature Enabled')
+            .setDescription(`**${feature}** is now enabled`)
+            .setTimestamp();
+        
+        await interaction.reply({ embeds: [embed], flags: 64 });
+        logger.info(`Feature enabled via admin command: ${feature}`);
+    },
+    
+    async featuresDisable(interaction) {
+        const feature = interaction.options.getString('feature');
+        featureManager.disable(feature);
+        
+        const embed = new EmbedBuilder()
+            .setColor(0xFF0000)
+            .setTitle('❌ Feature Disabled')
+            .setDescription(`**${feature}** is now disabled`)
+            .setTimestamp();
+        
+        await interaction.reply({ embeds: [embed], flags: 64 });
+        logger.info(`Feature disabled via admin command: ${feature}`);
+    },
+    
+    async featuresReset(interaction) {
+        featureManager.resetAll();
+        
+        const embed = new EmbedBuilder()
+            .setColor(0x00FF00)
+            .setTitle('🔄 All Features Reset')
+            .setDescription('All features have been reset to enabled')
+            .setTimestamp();
+        
+        await interaction.reply({ embeds: [embed], flags: 64 });
+        logger.info('All features reset via admin command');
     },
     
     // Livestream Management Methods
@@ -173,7 +343,8 @@ module.exports = {
                 { name: 'Notifications Sent', value: stats.notificationsSent.toString(), inline: true },
                 { name: 'Last Check', value: stats.lastCheckTime || 'Never', inline: true },
                 { name: 'Last Stream ID', value: stats.lastLiveStreamId || 'None', inline: true },
-                { name: 'Current Status', value: stats.currentStatus.isLive ? '🔴 Live' : '⚪ Not Live', inline: true }
+                { name: 'Current Status', value: stats.currentStatus.isLive ? '🔴 Live' : '⚪ Not Live', inline: true },
+                { name: 'Polls Active', value: stats.hasActivePoll ? '✅ Yes' : '❌ No', inline: true }
             )
             .setTimestamp();
         

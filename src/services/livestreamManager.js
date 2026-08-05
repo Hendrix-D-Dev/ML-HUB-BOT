@@ -4,6 +4,7 @@
  */
 const YouTubeService = require('./youtube');
 const NotificationService = require('./notification');
+const featureManager = require('./featureManager');
 const logger = require('../utils/logger');
 
 class LivestreamManager {
@@ -14,7 +15,7 @@ class LivestreamManager {
             config.youtube.apiKey,
             config.youtube.channelId
         );
-        this.notificationService = new NotificationService(client);
+        this.notificationService = client.notificationService || new NotificationService(client);
         this.isRunning = false;
         this.checkInterval = null;
         this.lastCheckTime = null;
@@ -48,6 +49,13 @@ class LivestreamManager {
 
         if (!this.config.youtube.notificationChannelId) {
             logger.error('❌ Notification channel ID not configured. Set YOUTUBE_NOTIFICATION_CHANNEL_ID in .env');
+            return false;
+        }
+
+        // Check if livestream notifications feature is enabled
+        if (!featureManager.isEnabled('livestreamNotifications')) {
+            logger.warn('⚠️ Livestream notifications are disabled. Feature will not run.');
+            logger.info('ℹ️ Enable with: /admin features enable livestreamNotifications');
             return false;
         }
 
@@ -87,6 +95,15 @@ class LivestreamManager {
      * Perform a single check of the YouTube channel
      */
     async checkStream() {
+        // Check if livestream notifications feature is enabled
+        if (!featureManager.isEnabled('livestreamNotifications')) {
+            if (this.isRunning) {
+                logger.info('ℹ️ Livestream notifications disabled. Stopping manager...');
+                this.stop();
+            }
+            return;
+        }
+
         this.totalChecks++;
         this.lastCheckTime = new Date().toISOString();
 
@@ -96,12 +113,16 @@ class LivestreamManager {
             const streamData = await this.youtubeService.checkLiveStatus();
 
             if (streamData) {
-                // New livestream detected! Send notification with poll
+                // New livestream detected! Send notification
                 logger.info(`🔴 New livestream detected!`);
                 logger.info(`📺 Title: ${streamData.title}`);
                 logger.info(`🔗 URL: ${streamData.url}`);
 
-                // Send notification with poll
+                // Check if polls feature is enabled
+                const pollsEnabled = featureManager.isEnabled('polls');
+                logger.info(`📊 Polls feature: ${pollsEnabled ? 'ENABLED' : 'DISABLED'}`);
+
+                // Send notification
                 const result = await this.notificationService.sendLivestreamNotification(
                     streamData,
                     this.config.youtube.notificationChannelId,
@@ -112,7 +133,11 @@ class LivestreamManager {
                     this.notificationsSent++;
                     this.lastLiveStreamId = streamData.videoId;
                     logger.info(`✅ Notification sent for livestream: ${streamData.videoId}`);
-                    logger.info(`📊 Poll created for match prediction`);
+                    if (pollsEnabled) {
+                        logger.info(`📊 Poll created for match prediction`);
+                    } else {
+                        logger.info(`ℹ️ Polls disabled - no poll created`);
+                    }
                 } else {
                     logger.error(`❌ Failed to send notification: ${result.error}`);
                 }
@@ -139,6 +164,12 @@ class LivestreamManager {
      * Send a test notification to verify configuration
      */
     async sendTestNotification() {
+        // Check if livestream notifications feature is enabled
+        if (!featureManager.isEnabled('livestreamNotifications')) {
+            logger.warn('⚠️ Livestream notifications are disabled. Enable with: /admin features enable livestreamNotifications');
+            return false;
+        }
+        
         return await this.notificationService.sendTestNotification(
             this.config.youtube.notificationChannelId
         );
@@ -157,8 +188,9 @@ class LivestreamManager {
             lastCheckTime: this.lastCheckTime,
             lastLiveStreamId: this.lastLiveStreamId,
             currentStatus: this.youtubeService.getStatus(),
-            hasActivePoll: this.notificationService.client.activePolls ? 
-                Object.keys(this.notificationService.client.activePolls).length > 0 : false
+            hasActivePoll: this.client.activePolls ? 
+                Object.keys(this.client.activePolls).length > 0 : false,
+            pollsEnabled: featureManager.isEnabled('polls')
         };
     }
 
