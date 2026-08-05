@@ -8,6 +8,7 @@ const logger = require('./utils/logger');
 const keepAlive = require('./keepalive');
 const CronJobs = require('./cronJobs');
 const LivestreamManager = require('./services/livestreamManager');
+const NotificationService = require('./services/notification');
 
 // Import the ping server
 require('./server');
@@ -36,6 +37,8 @@ client.commandQueue = [];
 
 // Initialize services
 const cronJobs = new CronJobs(client);
+const notificationService = new NotificationService(client);
+client.notificationService = notificationService; // Make available to commands and buttons
 const livestreamManager = new LivestreamManager(client, config);
 client.livestreamManager = livestreamManager; // Make available to commands
 
@@ -276,6 +279,7 @@ client.once('ready', () => {
         const started = livestreamManager.start();
         if (started) {
             logger.info('✅ YouTube Livestream Manager active');
+            logger.info('📊 Poll system active - users can vote on match predictions');
         } else {
             logger.warn('⚠️ YouTube Livestream Manager failed to start - check configuration');
         }

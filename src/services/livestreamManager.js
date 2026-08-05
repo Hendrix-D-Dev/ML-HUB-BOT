@@ -96,22 +96,25 @@ class LivestreamManager {
             const streamData = await this.youtubeService.checkLiveStatus();
 
             if (streamData) {
-                // New livestream detected! Send notification
+                // New livestream detected! Send notification with poll
                 logger.info(`🔴 New livestream detected!`);
                 logger.info(`📺 Title: ${streamData.title}`);
                 logger.info(`🔗 URL: ${streamData.url}`);
 
-                // Send notification
-                const success = await this.notificationService.sendLivestreamNotification(
+                // Send notification with poll
+                const result = await this.notificationService.sendLivestreamNotification(
                     streamData,
                     this.config.youtube.notificationChannelId,
                     true // @everyone
                 );
 
-                if (success) {
+                if (result.success) {
                     this.notificationsSent++;
                     this.lastLiveStreamId = streamData.videoId;
                     logger.info(`✅ Notification sent for livestream: ${streamData.videoId}`);
+                    logger.info(`📊 Poll created for match prediction`);
+                } else {
+                    logger.error(`❌ Failed to send notification: ${result.error}`);
                 }
             }
 
@@ -153,7 +156,9 @@ class LivestreamManager {
             notificationsSent: this.notificationsSent,
             lastCheckTime: this.lastCheckTime,
             lastLiveStreamId: this.lastLiveStreamId,
-            currentStatus: this.youtubeService.getStatus()
+            currentStatus: this.youtubeService.getStatus(),
+            hasActivePoll: this.notificationService.client.activePolls ? 
+                Object.keys(this.notificationService.client.activePolls).length > 0 : false
         };
     }
 
@@ -163,6 +168,10 @@ class LivestreamManager {
     resetState() {
         this.youtubeService.resetState();
         this.lastLiveStreamId = null;
+        // Clear active polls
+        if (this.client.activePolls) {
+            this.client.activePolls = {};
+        }
         logger.info('🔄 Livestream manager state reset');
     }
 }
