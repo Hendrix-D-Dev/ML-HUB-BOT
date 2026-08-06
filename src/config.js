@@ -20,12 +20,15 @@ module.exports = {
         apiSecret: process.env.CLOUDINARY_API_SECRET,
     },
     
-    // YouTube Config - NEW
+    // YouTube Config - PRIME TIME OPTIMIZED
     youtube: {
         apiKey: process.env.YOUTUBE_API_KEY,
-        channelId: process.env.YOUTUBE_CHANNEL_ID || 'UCSes7FNZXTPciWYxtwFY1BQ',
+        channelId: process.env.YOUTUBE_CHANNEL_ID,
         notificationChannelId: process.env.YOUTUBE_NOTIFICATION_CHANNEL_ID,
-        checkInterval: parseInt(process.env.YOUTUBE_CHECK_INTERVAL) || 180000, // 3 minutes default
+        checkInterval: parseInt(process.env.YOUTUBE_CHECK_INTERVAL) || 3600000, // 1 hour default
+        primeStart: parseInt(process.env.YOUTUBE_PRIME_START) || 20, // 8pm default
+        primeEnd: parseInt(process.env.YOUTUBE_PRIME_END) || 23, // 11pm default
+        primeInterval: parseInt(process.env.YOUTUBE_PRIME_INTERVAL) || 300000, // 5 minutes default
     },
     
     // Channel & Role IDs

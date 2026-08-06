@@ -1,6 +1,7 @@
 /**
  * Livestream Manager Service
  * Orchestrates the YouTube monitoring and notification system
+ * Optimized for prime time checking (night streams)
  */
 const YouTubeService = require('./youtube');
 const NotificationService = require('./notification');
@@ -18,16 +19,53 @@ class LivestreamManager {
         this.notificationService = client.notificationService || new NotificationService(client);
         this.isRunning = false;
         this.checkInterval = null;
+        this.primeInterval = null;
         this.lastCheckTime = null;
         this.totalChecks = 0;
         this.successfulChecks = 0;
         this.notificationsSent = 0;
         this.lastLiveStreamId = null;
+        this.isPrimeTime = false;
+    }
+
+    /**
+     * Check if current time is within prime time hours
+     */
+    isInPrimeTime() {
+        const now = new Date();
+        const hour = now.getHours();
+        const primeStart = this.config.youtube.primeStart || 20; // 8pm default
+        const primeEnd = this.config.youtube.primeEnd || 23; // 11pm default
+        
+        // Handle overnight prime time (e.g., 20:00 - 02:00)
+        if (primeStart < primeEnd) {
+            return hour >= primeStart && hour < primeEnd;
+        } else {
+            return hour >= primeStart || hour < primeEnd;
+        }
+    }
+
+    /**
+     * Get the appropriate check interval based on time of day
+     */
+    getCheckInterval() {
+        const isPrime = this.isInPrimeTime();
+        this.isPrimeTime = isPrime;
+        
+        if (isPrime) {
+            const interval = this.config.youtube.primeInterval || 300000; // 5 minutes default
+            logger.debug(`⏰ Prime time active - checking every ${interval / 60000} minutes`);
+            return interval;
+        } else {
+            const interval = this.config.youtube.checkInterval || 3600000; // 1 hour default
+            logger.debug(`⏰ Non-prime time - checking every ${interval / 60000} minutes`);
+            return interval;
+        }
     }
 
     /**
      * Start the livestream monitoring service
-     * @param {number} intervalMs - Check interval in milliseconds
+     * @param {number} intervalMs - Check interval in milliseconds (optional, uses config)
      * @returns {boolean} - Success status
      */
     start(intervalMs) {
@@ -59,20 +97,41 @@ class LivestreamManager {
             return false;
         }
 
-        const checkInterval = intervalMs || this.config.youtube.checkInterval || 180000;
+        const checkInterval = intervalMs || this.getCheckInterval();
+        const primeInfo = this.isInPrimeTime() ? 'ACTIVE' : 'INACTIVE';
 
-        logger.info(`🎥 Starting YouTube Livestream Manager`);
+        logger.info(`🎥 Starting YouTube Livestream Manager (Prime Time Optimized)`);
         logger.info(`📺 Monitoring channel: ${this.config.youtube.channelId}`);
         logger.info(`💬 Notifications will be sent to: ${this.config.youtube.notificationChannelId}`);
-        logger.info(`⏰ Checking every ${checkInterval / 60000} minutes`);
+        logger.info(`⏰ Prime Time (8pm-11pm): ${primeInfo}`);
+        logger.info(`⏰ Check interval: ${checkInterval / 60000} minutes`);
 
         // Do initial check immediately
         this.checkStream();
 
-        // Set up interval
+        // Set up the main interval
         this.checkInterval = setInterval(() => {
             this.checkStream();
         }, checkInterval);
+
+        // Set up a separate interval to check if we've entered prime time
+        this.primeInterval = setInterval(() => {
+            const newInterval = this.getCheckInterval();
+            const currentInterval = this.checkInterval._idleTimeout || 0;
+            
+            // If interval changed, reset it
+            if (Math.abs(newInterval - currentInterval) > 10000) {
+                logger.info(`⏰ Check interval updated: ${newInterval / 60000} minutes ${this.isPrimeTime ? '(Prime Time)' : '(Off Peak)'}`);
+                
+                // Clear existing interval
+                clearInterval(this.checkInterval);
+                
+                // Set up new interval
+                this.checkInterval = setInterval(() => {
+                    this.checkStream();
+                }, newInterval);
+            }
+        }, 60000); // Check prime time status every minute
 
         this.isRunning = true;
         logger.info('✅ Livestream manager started successfully');
@@ -86,6 +145,10 @@ class LivestreamManager {
         if (this.checkInterval) {
             clearInterval(this.checkInterval);
             this.checkInterval = null;
+        }
+        if (this.primeInterval) {
+            clearInterval(this.primeInterval);
+            this.primeInterval = null;
         }
         this.isRunning = false;
         logger.info('🛑 Livestream manager stopped');
@@ -106,9 +169,10 @@ class LivestreamManager {
 
         this.totalChecks++;
         this.lastCheckTime = new Date().toISOString();
+        const isPrime = this.isInPrimeTime();
 
         try {
-            logger.info(`🔍 Checking YouTube channel... (Check #${this.totalChecks})`);
+            logger.info(`🔍 Checking YouTube channel... (Check #${this.totalChecks}) ${isPrime ? '🔴 Prime Time' : '⚪ Off Peak'}`);
 
             const streamData = await this.youtubeService.checkLiveStatus();
 
@@ -164,7 +228,6 @@ class LivestreamManager {
      * Send a test notification to verify configuration
      */
     async sendTestNotification() {
-        // Check if livestream notifications feature is enabled
         if (!featureManager.isEnabled('livestreamNotifications')) {
             logger.warn('⚠️ Livestream notifications are disabled. Enable with: /admin features enable livestreamNotifications');
             return false;
@@ -182,6 +245,7 @@ class LivestreamManager {
     getStats() {
         return {
             isRunning: this.isRunning,
+            isPrimeTime: this.isPrimeTime,
             totalChecks: this.totalChecks,
             successfulChecks: this.successfulChecks,
             notificationsSent: this.notificationsSent,
@@ -190,7 +254,8 @@ class LivestreamManager {
             currentStatus: this.youtubeService.getStatus(),
             hasActivePoll: this.client.activePolls ? 
                 Object.keys(this.client.activePolls).length > 0 : false,
-            pollsEnabled: featureManager.isEnabled('polls')
+            pollsEnabled: featureManager.isEnabled('polls'),
+            quotaStats: this.youtubeService.getQuotaStats ? this.youtubeService.getQuotaStats() : null
         };
     }
 

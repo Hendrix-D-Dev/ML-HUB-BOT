@@ -1,6 +1,6 @@
 /**
  * YouTube Livestream Monitoring Service
- * Handles all YouTube Data API v3 interactions
+ * Handles all YouTube Data API v3 interactions - OPTIMIZED for quota
  */
 const axios = require('axios');
 const logger = require('../utils/logger');
@@ -13,92 +13,125 @@ class YouTubeService {
         this.lastLiveStreamId = null;
         this.isLive = false;
         this.currentStreamData = null;
+        this.quotaUsed = 0;
+        this.quotaResetTime = null;
     }
 
     /**
-     * Check if the channel is currently live
-     * @returns {Promise<Object>} - Live stream data or null if not live
+     * Check if the channel is currently live - OPTIMIZED version
+     * Uses the videos endpoint (1 unit) instead of search (100 units)
      */
     async checkLiveStatus() {
         try {
-            // Validate API key before making request
             if (!this.apiKey) {
-                throw new Error('YouTube API key is not configured. Please set YOUTUBE_API_KEY in .env');
+                throw new Error('YouTube API key not configured');
             }
 
-            const response = await axios.get(`${this.baseUrl}/search`, {
+            // Step 1: Get the channel's uploads playlist ID (1 unit - free)
+            const channelResponse = await axios.get(`${this.baseUrl}/channels`, {
                 params: {
-                    part: 'snippet',
-                    channelId: this.channelId,
-                    eventType: 'live',
-                    type: 'video',
+                    part: 'contentDetails',
+                    id: this.channelId,
                     key: this.apiKey
                 },
-                timeout: 10000 // 10 second timeout
+                timeout: 10000
             });
 
-            if (response.status !== 200) {
-                throw new Error(`YouTube API returned status ${response.status}`);
-            }
-
-            const items = response.data.items || [];
-
-            if (items.length === 0) {
-                // Channel is not live
-                if (this.isLive) {
-                    logger.info(`📴 Channel is no longer live (was live with stream: ${this.lastLiveStreamId})`);
-                    this.isLive = false;
-                    this.currentStreamData = null;
-                }
+            if (!channelResponse.data.items || channelResponse.data.items.length === 0) {
+                logger.error('❌ Channel not found');
                 return null;
             }
 
-            // Channel is live
-            const liveVideo = items[0];
-            const videoId = liveVideo.id.videoId;
-            const streamData = {
-                videoId: videoId,
-                title: liveVideo.snippet.title,
-                description: liveVideo.snippet.description,
-                thumbnail: liveVideo.snippet.thumbnails.high?.url || 
-                           liveVideo.snippet.thumbnails.medium?.url || 
-                           liveVideo.snippet.thumbnails.default?.url,
-                channelTitle: liveVideo.snippet.channelTitle,
-                publishedAt: liveVideo.snippet.publishedAt,
-                url: `https://www.youtube.com/watch?v=${videoId}`
-            };
+            const uploadsPlaylistId = channelResponse.data.items[0].contentDetails.relatedPlaylists.uploads;
 
-            // Check if this is a new livestream (different from last announced)
-            if (this.lastLiveStreamId !== videoId) {
-                // This is a new livestream
-                this.isLive = true;
-                this.lastLiveStreamId = videoId;
-                this.currentStreamData = streamData;
-                logger.info(`🔴 New livestream detected: "${streamData.title}" (${videoId})`);
-                return streamData;
+            // Step 2: Get the latest video from the channel (1 unit)
+            const videosResponse = await axios.get(`${this.baseUrl}/playlistItems`, {
+                params: {
+                    part: 'snippet',
+                    playlistId: uploadsPlaylistId,
+                    maxResults: 5,
+                    key: this.apiKey
+                },
+                timeout: 10000
+            });
+
+            if (!videosResponse.data.items || videosResponse.data.items.length === 0) {
+                return null;
             }
 
-            // Same livestream as before - return current data but mark as duplicate
-            this.isLive = true;
-            this.currentStreamData = streamData;
-            logger.info(`🔄 Checked: Same livestream still active - "${streamData.title}"`);
-            return null; // Return null to indicate no new notification needed
+            // Step 3: Check each recent video for livestream status
+            const videoIds = videosResponse.data.items.map(item => item.snippet.resourceId.videoId).join(',');
+
+            const videoResponse = await axios.get(`${this.baseUrl}/videos`, {
+                params: {
+                    part: 'snippet,liveStreamingDetails',
+                    id: videoIds,
+                    key: this.apiKey
+                },
+                timeout: 10000
+            });
+
+            // Track quota usage (approximately)
+            this.quotaUsed += 3; // Channel + Playlist + Videos calls
+
+            if (!videoResponse.data.items || videoResponse.data.items.length === 0) {
+                return null;
+            }
+
+            // Find the first video that is currently live
+            for (const video of videoResponse.data.items) {
+                if (video.liveStreamingDetails && video.liveStreamingDetails.actualStartTime) {
+                    const videoId = video.id;
+                    const streamData = {
+                        videoId: videoId,
+                        title: video.snippet.title,
+                        description: video.snippet.description,
+                        thumbnail: video.snippet.thumbnails.high?.url || 
+                                   video.snippet.thumbnails.medium?.url || 
+                                   video.snippet.thumbnails.default?.url,
+                        channelTitle: video.snippet.channelTitle,
+                        publishedAt: video.snippet.publishedAt,
+                        url: `https://www.youtube.com/watch?v=${videoId}`,
+                        concurrentViewers: video.liveStreamingDetails?.concurrentViewers || '0'
+                    };
+
+                    // Check if this is a new livestream
+                    if (this.lastLiveStreamId !== videoId) {
+                        this.isLive = true;
+                        this.lastLiveStreamId = videoId;
+                        this.currentStreamData = streamData;
+                        logger.info(`🔴 New livestream detected: "${streamData.title}" (${videoId})`);
+                        return streamData;
+                    }
+
+                    // Same livestream - no notification needed
+                    this.isLive = true;
+                    this.currentStreamData = streamData;
+                    logger.info(`🔄 Checked: Same livestream still active - "${streamData.title}"`);
+                    return null;
+                }
+            }
+
+            // No live videos found
+            if (this.isLive) {
+                logger.info(`📴 Channel is no longer live (was: ${this.lastLiveStreamId})`);
+                this.isLive = false;
+                this.currentStreamData = null;
+            }
+            return null;
 
         } catch (error) {
             // Handle specific error types
-            if (error.code === 'ECONNABORTED') {
-                logger.error(`❌ YouTube API request timeout: ${error.message}`);
-            } else if (error.response) {
-                // YouTube API returned an error response
+            if (error.response) {
                 const status = error.response.status;
                 const data = error.response.data;
                 
-                if (status === 403) {
-                    if (data.error?.errors?.[0]?.reason === 'quotaExceeded') {
-                        logger.error('❌ YouTube API quota exceeded. Resetting at midnight PT.');
-                    } else {
-                        logger.error(`❌ YouTube API permission denied: ${JSON.stringify(data.error)}`);
-                    }
+                if (status === 429) {
+                    logger.error(`❌ YouTube API quota exceeded. The bot will try again later.`);
+                    logger.warn(`⚠️ Please reduce check frequency or request higher quota.`);
+                    logger.info(`ℹ️ Next check will happen in ${this.getTimeUntilReset() || 'unknown time'}`);
+                } else if (status === 403) {
+                    logger.error(`❌ YouTube API permission denied: ${JSON.stringify(data.error)}`);
                 } else if (status === 400) {
                     logger.error(`❌ YouTube API bad request: ${JSON.stringify(data.error)}`);
                 } else if (status === 404) {
@@ -106,8 +139,8 @@ class YouTubeService {
                 } else {
                     logger.error(`❌ YouTube API error (${status}): ${JSON.stringify(data.error)}`);
                 }
-            } else if (error.message.includes('API key')) {
-                logger.error('❌ Invalid YouTube API key. Please check YOUTUBE_API_KEY in .env');
+            } else if (error.code === 'ECONNABORTED') {
+                logger.error(`❌ YouTube API request timeout: ${error.message}`);
             } else {
                 logger.error(`❌ YouTube API error: ${error.message}`);
             }
@@ -117,41 +150,33 @@ class YouTubeService {
     }
 
     /**
-     * Get detailed stream information (for additional details if needed)
-     * @param {string} videoId - YouTube video ID
-     * @returns {Promise<Object>} - Detailed stream data
+     * Get time until quota reset (approximate)
      */
-    async getStreamDetails(videoId) {
-        try {
-            const response = await axios.get(`${this.baseUrl}/videos`, {
-                params: {
-                    part: 'snippet,liveStreamingDetails,statistics',
-                    id: videoId,
-                    key: this.apiKey
-                },
-                timeout: 10000
-            });
-
-            if (response.status !== 200 || !response.data.items || response.data.items.length === 0) {
-                return null;
-            }
-
-            const video = response.data.items[0];
-            return {
-                viewCount: video.statistics?.viewCount || '0',
-                likeCount: video.statistics?.likeCount || '0',
-                concurrentViewers: video.liveStreamingDetails?.concurrentViewers || '0',
-                actualStartTime: video.liveStreamingDetails?.actualStartTime,
-                scheduledStartTime: video.liveStreamingDetails?.scheduledStartTime
-            };
-        } catch (error) {
-            logger.error(`❌ Failed to get stream details: ${error.message}`);
-            return null;
+    getTimeUntilReset() {
+        const now = new Date();
+        const resetTime = new Date();
+        resetTime.setHours(24, 0, 0, 0); // Midnight PT
+        const diff = resetTime - now;
+        if (diff > 0) {
+            const hours = Math.floor(diff / (1000 * 60 * 60));
+            const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+            return `${hours}h ${minutes}m`;
         }
+        return null;
     }
 
     /**
-     * Reset the live state (useful for testing or manual reset)
+     * Get quota usage stats
+     */
+    getQuotaStats() {
+        return {
+            quotaUsed: this.quotaUsed,
+            quotaResetTime: this.quotaResetTime
+        };
+    }
+
+    /**
+     * Reset the state
      */
     resetState() {
         this.lastLiveStreamId = null;
@@ -161,8 +186,7 @@ class YouTubeService {
     }
 
     /**
-     * Get current live status without triggering notifications
-     * @returns {Object} - Current status
+     * Get current status
      */
     getStatus() {
         return {
