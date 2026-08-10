@@ -329,7 +329,7 @@ module.exports = {
         logger.info('All features reset via admin command');
     },
     
-    // Livestream Management Methods
+    // Livestream Management Methods - UPDATED with Prime Time info
     async livestreamStatus(interaction, manager) {
         const stats = manager.getStats();
         
@@ -338,23 +338,36 @@ module.exports = {
             .setTitle('📺 YouTube Livestream Status')
             .addFields(
                 { name: 'Status', value: stats.isRunning ? '🟢 Active' : '🔴 Inactive', inline: true },
+                { name: 'Mode', value: stats.mode || (stats.isPrimeTime ? '🔴 INSTANT DETECTION (10s)' : '💤 SLEEP MODE'), inline: true },
+                { name: 'Check Interval', value: stats.checkInterval || (stats.isPrimeTime ? '10 seconds' : 'No checks (sleeping)'), inline: true },
                 { name: 'Total Checks', value: stats.totalChecks.toString(), inline: true },
-                { name: 'Successful Checks', value: stats.successfulChecks.toString(), inline: true },
+                { name: 'Prime Checks', value: (stats.primeChecks || 0).toString(), inline: true },
                 { name: 'Notifications Sent', value: stats.notificationsSent.toString(), inline: true },
                 { name: 'Last Check', value: stats.lastCheckTime || 'Never', inline: true },
-                { name: 'Last Stream ID', value: stats.lastLiveStreamId || 'None', inline: true },
+                { name: 'Next Prime Time', value: stats.nextPrimeTime || 'Calculating...', inline: true },
                 { name: 'Current Status', value: stats.currentStatus.isLive ? '🔴 Live' : '⚪ Not Live', inline: true },
-                { name: 'Polls Active', value: stats.hasActivePoll ? '✅ Yes' : '❌ No', inline: true }
+                { name: 'Polls Active', value: stats.hasActivePoll ? '✅ Yes' : '❌ No', inline: true },
+                { name: 'Last Stream ID', value: stats.lastLiveStreamId || 'None', inline: true }
             )
             .setTimestamp();
         
         if (stats.currentStatus.currentStreamData) {
             embed.addFields({ 
-                name: 'Current Stream', 
-                value: stats.currentStatus.currentStreamData.title, 
+                name: '📺 Current Stream', 
+                value: `**${stats.currentStatus.currentStreamData.title}**\n🔗 ${stats.currentStatus.currentStreamData.url}`,
                 inline: false 
             });
         }
+        
+        // Add prime time info
+        const now = new Date();
+        const hour = now.getHours();
+        const isPrime = hour >= 20 || hour < 0;
+        embed.addFields({ 
+            name: '⏰ Prime Time Status', 
+            value: isPrime ? '🟢 **ACTIVE** (8pm-12am) - 10 second checks' : '⚪ **INACTIVE** (12am-8pm) - No checks',
+            inline: false 
+        });
         
         await interaction.reply({ embeds: [embed], flags: 64 });
     },

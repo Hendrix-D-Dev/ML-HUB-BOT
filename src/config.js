@@ -20,15 +20,16 @@ module.exports = {
         apiSecret: process.env.CLOUDINARY_API_SECRET,
     },
     
-    // YouTube Config - PRIME TIME OPTIMIZED
+    // YouTube Config - FOCUSED PRIME TIME ONLY
     youtube: {
         apiKey: process.env.YOUTUBE_API_KEY,
         channelId: process.env.YOUTUBE_CHANNEL_ID,
         notificationChannelId: process.env.YOUTUBE_NOTIFICATION_CHANNEL_ID,
-        checkInterval: parseInt(process.env.YOUTUBE_CHECK_INTERVAL) || 3600000, // 1 hour default
-        primeStart: parseInt(process.env.YOUTUBE_PRIME_START) || 20, // 8pm default
-        primeEnd: parseInt(process.env.YOUTUBE_PRIME_END) || 23, // 11pm default
-        primeInterval: parseInt(process.env.YOUTUBE_PRIME_INTERVAL) || 300000, // 5 minutes default
+        checkInterval: parseInt(process.env.YOUTUBE_CHECK_INTERVAL) || 1800000, // 30 minutes (sleep mode)
+        primeStart: parseInt(process.env.YOUTUBE_PRIME_START) || 20, // 8pm
+        primeEnd: parseInt(process.env.YOUTUBE_PRIME_END) || 0, // 12am (midnight)
+        primeInterval: parseInt(process.env.YOUTUBE_PRIME_INTERVAL) || 10000, // 10 SECONDS!
+        sleepMode: process.env.YOUTUBE_SLEEP_MODE === 'true' // Enable/disable sleep mode
     },
     
     // Channel & Role IDs

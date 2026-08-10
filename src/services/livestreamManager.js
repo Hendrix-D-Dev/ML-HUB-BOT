@@ -1,7 +1,7 @@
 /**
  * Livestream Manager Service
- * Orchestrates the YouTube monitoring and notification system
- * Optimized for prime time checking (night streams)
+ * FOCUSED PRIME TIME MODE - Only active during 8pm-12am
+ * Checks every 10 seconds during prime time for INSTANT detection
  */
 const YouTubeService = require('./youtube');
 const NotificationService = require('./notification');
@@ -20,28 +20,33 @@ class LivestreamManager {
         this.isRunning = false;
         this.checkInterval = null;
         this.primeInterval = null;
-        this.lastCheckTime = null;
-        this.totalChecks = 0;
-        this.successfulChecks = 0;
-        this.notificationsSent = 0;
-        this.lastLiveStreamId = null;
         this.isPrimeTime = false;
+        this.isSleepMode = false;
+        this.totalChecks = 0;
+        this.primeChecks = 0;
+        this.notificationsSent = 0;
+        this.lastCheckTime = null;
+        this.lastLiveStreamId = null;
+        this.checkedToday = false;
+        this.todayDate = null;
     }
 
     /**
-     * Check if current time is within prime time hours
+     * Check if current time is within prime time hours (8pm-12am)
      */
     isInPrimeTime() {
         const now = new Date();
         const hour = now.getHours();
-        const primeStart = this.config.youtube.primeStart || 20; // 8pm default
-        const primeEnd = this.config.youtube.primeEnd || 23; // 11pm default
+        const minute = now.getMinutes();
+        const currentTime = hour + minute / 60;
         
-        // Handle overnight prime time (e.g., 20:00 - 02:00)
+        const primeStart = this.config.youtube.primeStart || 20; // 8pm
+        const primeEnd = this.config.youtube.primeEnd || 0; // 12am
+        
         if (primeStart < primeEnd) {
-            return hour >= primeStart && hour < primeEnd;
+            return currentTime >= primeStart && currentTime < primeEnd;
         } else {
-            return hour >= primeStart || hour < primeEnd;
+            return currentTime >= primeStart || currentTime < primeEnd;
         }
     }
 
@@ -53,20 +58,17 @@ class LivestreamManager {
         this.isPrimeTime = isPrime;
         
         if (isPrime) {
-            const interval = this.config.youtube.primeInterval || 300000; // 5 minutes default
-            logger.debug(`⏰ Prime time active - checking every ${interval / 60000} minutes`);
+            const interval = this.config.youtube.primeInterval || 10000; // 10 seconds
             return interval;
         } else {
-            const interval = this.config.youtube.checkInterval || 3600000; // 1 hour default
-            logger.debug(`⏰ Non-prime time - checking every ${interval / 60000} minutes`);
+            // Sleep mode - use a long interval (no checks needed)
+            const interval = this.config.youtube.checkInterval || 1800000; // 30 minutes
             return interval;
         }
     }
 
     /**
      * Start the livestream monitoring service
-     * @param {number} intervalMs - Check interval in milliseconds (optional, uses config)
-     * @returns {boolean} - Success status
      */
     start(intervalMs) {
         if (this.isRunning) {
@@ -90,23 +92,27 @@ class LivestreamManager {
             return false;
         }
 
-        // Check if livestream notifications feature is enabled
         if (!featureManager.isEnabled('livestreamNotifications')) {
-            logger.warn('⚠️ Livestream notifications are disabled. Feature will not run.');
-            logger.info('ℹ️ Enable with: /admin features enable livestreamNotifications');
+            logger.warn('⚠️ Livestream notifications are disabled. Enable with: /admin features enable livestreamNotifications');
             return false;
         }
 
-        const checkInterval = intervalMs || this.getCheckInterval();
-        const primeInfo = this.isInPrimeTime() ? 'ACTIVE' : 'INACTIVE';
+        const isPrime = this.isInPrimeTime();
+        const checkInterval = this.getCheckInterval();
 
-        logger.info(`🎥 Starting YouTube Livestream Manager (Prime Time Optimized)`);
+        logger.info(`🎥 Starting YouTube Livestream Manager (FOCUSED PRIME TIME MODE)`);
         logger.info(`📺 Monitoring channel: ${this.config.youtube.channelId}`);
-        logger.info(`💬 Notifications will be sent to: ${this.config.youtube.notificationChannelId}`);
-        logger.info(`⏰ Prime Time (8pm-11pm): ${primeInfo}`);
-        logger.info(`⏰ Check interval: ${checkInterval / 60000} minutes`);
+        logger.info(`💬 Notifications: ${this.config.youtube.notificationChannelId}`);
+        logger.info(`⏰ Prime Time (8pm-12am): ${isPrime ? '🟢 ACTIVE' : '⚪ SLEEPING'}`);
+        logger.info(`⏰ Check interval: ${isPrime ? `${checkInterval / 1000} SECONDS` : `${checkInterval / 60000} minutes (sleep mode)`}`);
+        
+        if (isPrime) {
+            logger.info(`🔴 INSTANT DETECTION MODE ENABLED - Checking every ${checkInterval / 1000} seconds`);
+        } else {
+            logger.info(`💤 Sleep mode active - No checks until 8pm`);
+        }
 
-        // Do initial check immediately
+        // Do an initial check immediately
         this.checkStream();
 
         // Set up the main interval
@@ -114,24 +120,39 @@ class LivestreamManager {
             this.checkStream();
         }, checkInterval);
 
-        // Set up a separate interval to check if we've entered prime time
+        // Check prime time status every 5 seconds for instant switching
         this.primeInterval = setInterval(() => {
-            const newInterval = this.getCheckInterval();
-            const currentInterval = this.checkInterval._idleTimeout || 0;
+            const now = new Date();
+            const hour = now.getHours();
+            const minute = now.getMinutes();
+            const isPrime = this.isInPrimeTime();
             
-            // If interval changed, reset it
-            if (Math.abs(newInterval - currentInterval) > 10000) {
-                logger.info(`⏰ Check interval updated: ${newInterval / 60000} minutes ${this.isPrimeTime ? '(Prime Time)' : '(Off Peak)'}`);
+            // If prime time status changed
+            if (this.isPrimeTime !== isPrime) {
+                this.isPrimeTime = isPrime;
+                const newInterval = this.getCheckInterval();
                 
-                // Clear existing interval
+                if (isPrime) {
+                    logger.info(`🔴🔴🔴 PRIME TIME STARTED (8pm) - Switching to INSTANT DETECTION MODE!`);
+                    logger.info(`⏰ Now checking every ${newInterval / 1000} seconds`);
+                } else {
+                    logger.info(`💤💤💤 PRIME TIME ENDED (12am) - Switching to SLEEP MODE`);
+                    logger.info(`⏰ No checks until 8pm tomorrow`);
+                }
+                
+                // Clear and restart interval with new timing
                 clearInterval(this.checkInterval);
-                
-                // Set up new interval
                 this.checkInterval = setInterval(() => {
                     this.checkStream();
                 }, newInterval);
+                
+                // Reset state for new prime time session
+                if (isPrime) {
+                    this.checkedToday = false;
+                    this.todayDate = new Date().toDateString();
+                }
             }
-        }, 60000); // Check prime time status every minute
+        }, 5000); // Check every 5 seconds
 
         this.isRunning = true;
         logger.info('✅ Livestream manager started successfully');
@@ -167,26 +188,41 @@ class LivestreamManager {
             return;
         }
 
-        this.totalChecks++;
-        this.lastCheckTime = new Date().toISOString();
+        // Skip checks if in sleep mode (outside prime time)
         const isPrime = this.isInPrimeTime();
+        if (!isPrime) {
+            // Only log occasionally so logs don't get spammy
+            if (this.totalChecks % 20 === 0) {
+                logger.info(`💤 Sleep mode - Waiting for 8pm... (${new Date().toLocaleTimeString()})`);
+            }
+            this.totalChecks++;
+            return;
+        }
+
+        this.totalChecks++;
+        this.primeChecks++;
+        this.lastCheckTime = new Date().toISOString();
+        const timestamp = new Date().toLocaleTimeString();
 
         try {
-            logger.info(`🔍 Checking YouTube channel... (Check #${this.totalChecks}) ${isPrime ? '🔴 Prime Time' : '⚪ Off Peak'}`);
+            // Log every check during prime time (every 10 seconds)
+            logger.info(`🔍 [${timestamp}] Prime check #${this.primeChecks} (every 10s)`);
 
             const streamData = await this.youtubeService.checkLiveStatus();
 
             if (streamData) {
-                // New livestream detected! Send notification
-                logger.info(`🔴 New livestream detected!`);
+                // NEW LIVESTREAM DETECTED! Send notification immediately
+                logger.info(`🔴🔴🔴 LIVESTREAM DETECTED! 🔴🔴🔴`);
                 logger.info(`📺 Title: ${streamData.title}`);
                 logger.info(`🔗 URL: ${streamData.url}`);
+                logger.info(`⏰ Detected at: ${timestamp}`);
+                logger.info(`⚡ Detected in ${this.primeChecks} checks (${(this.primeChecks * 10)} seconds into prime time)`);
 
                 // Check if polls feature is enabled
                 const pollsEnabled = featureManager.isEnabled('polls');
                 logger.info(`📊 Polls feature: ${pollsEnabled ? 'ENABLED' : 'DISABLED'}`);
 
-                // Send notification
+                // Send notification INSTANTLY
                 const result = await this.notificationService.sendLivestreamNotification(
                     streamData,
                     this.config.youtube.notificationChannelId,
@@ -196,22 +232,22 @@ class LivestreamManager {
                 if (result.success) {
                     this.notificationsSent++;
                     this.lastLiveStreamId = streamData.videoId;
-                    logger.info(`✅ Notification sent for livestream: ${streamData.videoId}`);
-                    if (pollsEnabled) {
-                        logger.info(`📊 Poll created for match prediction`);
-                    } else {
-                        logger.info(`ℹ️ Polls disabled - no poll created`);
-                    }
+                    this.checkedToday = true;
+                    this.todayDate = new Date().toDateString();
+                    logger.info(`✅✅✅ NOTIFICATION SENT INSTANTLY! ✅✅✅`);
+                    logger.info(`📢 Detection time: ${(this.primeChecks * 10)} seconds after 8pm`);
                 } else {
                     logger.error(`❌ Failed to send notification: ${result.error}`);
                 }
+            } else {
+                // No stream detected yet, continue checking
+                if (this.primeChecks % 6 === 0) { // Log every minute (6 checks at 10s each)
+                    logger.info(`⏳ No stream yet... (${this.primeChecks} checks, ${(this.primeChecks * 10)}s into prime time)`);
+                }
             }
-
-            this.successfulChecks++;
 
         } catch (error) {
             logger.error(`❌ Error during stream check: ${error.message}`);
-            // Don't increment successfulChecks on error
         }
     }
 
@@ -240,14 +276,18 @@ class LivestreamManager {
 
     /**
      * Get service statistics
-     * @returns {Object} - Stats
      */
     getStats() {
+        const isPrime = this.isInPrimeTime();
         return {
             isRunning: this.isRunning,
-            isPrimeTime: this.isPrimeTime,
+            isPrimeTime: isPrime,
+            mode: isPrime ? '🔴 INSTANT DETECTION (10s)' : '💤 SLEEP MODE',
+            checkInterval: isPrime ? 
+                `${this.config.youtube.primeInterval / 1000} seconds` : 
+                'No checks (sleeping until 8pm)',
             totalChecks: this.totalChecks,
-            successfulChecks: this.successfulChecks,
+            primeChecks: this.primeChecks,
             notificationsSent: this.notificationsSent,
             lastCheckTime: this.lastCheckTime,
             lastLiveStreamId: this.lastLiveStreamId,
@@ -255,17 +295,42 @@ class LivestreamManager {
             hasActivePoll: this.client.activePolls ? 
                 Object.keys(this.client.activePolls).length > 0 : false,
             pollsEnabled: featureManager.isEnabled('polls'),
-            quotaStats: this.youtubeService.getQuotaStats ? this.youtubeService.getQuotaStats() : null
+            nextPrimeTime: this.getNextPrimeTime()
         };
     }
 
     /**
-     * Reset the state (clears last stream ID)
+     * Get time until next prime time starts
+     */
+    getNextPrimeTime() {
+        const now = new Date();
+        const primeStart = this.config.youtube.primeStart || 20;
+        let next = new Date(now);
+        next.setHours(primeStart, 0, 0, 0);
+        
+        if (now.getHours() >= primeStart) {
+            next.setDate(next.getDate() + 1);
+        }
+        
+        const diff = next - now;
+        const hours = Math.floor(diff / (1000 * 60 * 60));
+        const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+        
+        if (diff > 0) {
+            return `${hours}h ${minutes}m`;
+        }
+        return 'Now!';
+    }
+
+    /**
+     * Reset the state
      */
     resetState() {
         this.youtubeService.resetState();
         this.lastLiveStreamId = null;
-        // Clear active polls
+        this.checkedToday = false;
+        this.todayDate = null;
+        this.primeChecks = 0;
         if (this.client.activePolls) {
             this.client.activePolls = {};
         }
